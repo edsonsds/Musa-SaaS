@@ -2343,25 +2343,21 @@ def wpp_ia_conectar():
     except Exception:
         pass
 
-    # 2. Criar instância (formato v2 com webhook embutido)
+    # 2. Criar instância (formato v1.7.4 — webhook como STRING)
     try:
         payload = {
             'instanceName': instance_name,
             'qrcode': True,
             'integration': 'WHATSAPP-BAILEYS',
-            'webhook': {
-                'url': webhook_url,
-                'byEvents': False,
-                'base64': False,
-                'events': ['MESSAGES_UPSERT']
-            }
+            'webhook': webhook_url,
+            'webhook_by_events': False,
+            'events': ['MESSAGES_UPSERT']
         }
         status, body = _evo_req('/instance/create', payload)
         data = _js.loads(body)
     except _ue.HTTPError as he:
         eb = he.read().decode('utf-8', errors='ignore')
-        # Se já existe (403), tentar só reconectar
-        if he.code == 403:
+        if he.code in (403, 409):
             try:
                 status, body = _evo_req('/instance/connect/' + instance_name, method='GET')
                 data = _js.loads(body)
@@ -2372,38 +2368,37 @@ def wpp_ia_conectar():
     except Exception as ex:
         return jsonify({'ok': False, 'erro': 'Não foi possível conectar: ' + str(ex)})
 
-    # Extrair QR de vários formatos possíveis (v2 varia)
+    # Extrair QR (v1.7.4: qrcode.base64 ou qrcode.code)
     qr = ''
-    if isinstance(data, dict):
-        qr = (data.get('qrcode', {}).get('base64', '') or
-              data.get('qrcode', {}).get('code', '') or
-              data.get('base64', '') or
-              (data.get('qrcode') if isinstance(data.get('qrcode'), str) else ''))
+    def _extrai_qr(d):
+        if not isinstance(d, dict): return ''
+        qc = d.get('qrcode', {})
+        if isinstance(qc, dict):
+            return qc.get('base64', '') or qc.get('code', '')
+        if isinstance(qc, str):
+            return qc
+        return d.get('base64', '') or d.get('code', '')
+    qr = _extrai_qr(data)
 
-    # 3. Garantir webhook configurado (formato v2)
+    # 3. Garantir webhook (formato v1.7.4 — payload com url string)
     try:
         wh_payload = {
-            'webhook': {
-                'enabled': True,
-                'url': webhook_url,
-                'byEvents': False,
-                'base64': False,
-                'events': ['MESSAGES_UPSERT']
-            }
+            'url': webhook_url,
+            'webhook_by_events': False,
+            'webhook_base64': False,
+            'events': ['MESSAGES_UPSERT']
         }
         _evo_req('/webhook/set/' + instance_name, wh_payload)
     except Exception as ex_wh:
-        print('Aviso: webhook não configurado:', ex_wh)
+        print('Aviso: webhook nao configurado:', ex_wh)
 
-    # Se QR veio vazio, buscar via connect
+    # Se QR vazio, buscar via connect
     if not qr:
         try:
             import time as _t
-            _t.sleep(2)
+            _t.sleep(3)
             status, body = _evo_req('/instance/connect/' + instance_name, method='GET')
-            cd = _js.loads(body)
-            qr = (cd.get('base64', '') or cd.get('code', '') or
-                  (cd.get('qrcode', {}).get('base64', '') if isinstance(cd.get('qrcode'), dict) else ''))
+            qr = _extrai_qr(_js.loads(body))
         except Exception as ex_qr:
             print('Erro ao buscar QR:', ex_qr)
 

@@ -1677,16 +1677,13 @@ def lembrete_semanal_disparar():
 
     msg_override = (request.json or {}).get('msg_fixa_override', '') if request.method == 'POST' else ''
 
-    # Cron: envia em background com pausa humana (evita timeout do cron-job.org)
-    if key and key == cron_key:
-        import threading as _th
-        _th.Thread(target=_executar_lembrete,
-                   args=(sids, hoje, dia_semana, False, '', True), daemon=True).start()
-        return jsonify({'ok': True, 'msg': 'Iniciado em background'})
-
-    # Manual (botão): envia direto SEM sleep — evita timeout do Gunicorn (30s)
-    total = _executar_lembrete(sids, hoje, dia_semana, True, msg_override, False)
-    return jsonify({'ok': True, 'enviados': total})
+    # Tanto cron quanto manual rodam em thread separada
+    # Motivo: _enviar_wpp pode demorar >30s (timeout Gunicorn) se a Evolution estiver lenta
+    import threading as _th
+    com_sleep = bool(key and key == cron_key)  # pausa humana só no cron
+    _th.Thread(target=_executar_lembrete,
+               args=(sids, hoje, dia_semana, forcar, msg_override, com_sleep), daemon=True).start()
+    return jsonify({'ok': True, 'msg': 'Envio iniciado! Atualize a tela em instantes para ver o progresso.'})
 
 
 def _executar_lembrete(sids, hoje, dia_semana, forcar, msg_override, com_sleep):
@@ -1954,6 +1951,10 @@ def agendamentos():
         pass
     cur = db_exec("INSERT INTO agendamentos (salon_id,cli_id,pro_id,svc_id,data,h_ini,h_fim,preco,status,obs) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
                   (sid,d['cli_id'],d['pro_id'],d['svc_id'],d['data'],d['h_ini'],d['h_fim'],d.get('preco',0),d.get('status','agendado'),d.get('obs','')), 'one')
+    # Quando a cliente agenda, remove automaticamente da lista de retorno pendente
+    if d.get('cli_id'):
+        db_exec("UPDATE retorno_alertas SET realizado=1 WHERE salon_id=%s AND cli_id=%s AND realizado=0",
+                (sid, d['cli_id']))
     db_commit()
     return jsonify({'ok': True, 'id': cur['id']})
 
@@ -2334,12 +2335,29 @@ def retorno_alertas():
     hoje = today_br().isoformat()
     dias_ahead = int(request.args.get('dias', 7))
     futuro = (today_br() + datetime.timedelta(days=dias_ahead)).isoformat()
+
+    # Marcar automaticamente como realizado quem já tem agendamento futuro
+    # ou já concluiu um atendimento depois da data de retorno
+    db_exec("""
+        UPDATE retorno_alertas SET realizado=1
+        WHERE salon_id=%s AND realizado=0
+          AND cli_id IN (
+              SELECT DISTINCT cli_id FROM agendamentos
+              WHERE salon_id=%s
+                AND status NOT IN ('cancelado')
+                AND data >= (SELECT data_atendimento FROM retorno_alertas ra2
+                             WHERE ra2.id=retorno_alertas.id)
+          )
+    """, (sid, sid))
+    db_commit()
+
     rows = db_exec("""SELECT ra.*, c.nome as cli_nome, c.tel as cli_tel,
         (SELECT MAX(enviado_em) FROM contato_auto_log cal
          WHERE cal.salon_id=ra.salon_id AND cal.tipo='retorno' AND cal.cli_id=ra.cli_id) as enviado_em
         FROM retorno_alertas ra
-        JOIN clientes c ON c.id=ra.cli_id WHERE ra.salon_id=%s AND ra.realizado=0 AND ra.data_retorno<=%s
-        ORDER BY ra.data_retorno""", (sid,futuro), 'all')
+        JOIN clientes c ON c.id=ra.cli_id
+        WHERE ra.salon_id=%s AND ra.realizado=0 AND ra.data_retorno<=%s
+        ORDER BY ra.data_retorno""", (sid, futuro), 'all')
     return jsonify([dict(r) for r in rows])
 
 @app.route('/api/retorno-alertas/<int:rid>/realizado', methods=['POST'])

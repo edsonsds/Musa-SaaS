@@ -948,6 +948,13 @@ body.dark #m-resumo-foot{border-top-color:#2e2e42}
     </div>
   </div>
   <div class="sb-salon-nm" id="sb-salon-nm">Studio Aurora</div>
+  <!-- Indicador de status WhatsApp -->
+  <div id="wpp-status-bar" onclick="navTo('wpp_ia')" title="Status do WhatsApp — clique para gerenciar"
+       style="display:none;margin:4px 10px 0;padding:5px 10px;border-radius:8px;cursor:pointer;
+              font-size:11px;font-weight:600;align-items:center;gap:6px;transition:.2s">
+    <span id="wpp-status-dot" style="width:7px;height:7px;border-radius:50%;flex-shrink:0;background:#10b981"></span>
+    <span id="wpp-status-txt">WhatsApp conectado</span>
+  </div>
   <div class="sb-nav" id="sb-nav"></div>
   <div class="sb-foot">
     <div class="sb-av" id="sb-av" onclick="navTo('config')">A</div>
@@ -1298,6 +1305,8 @@ function abrirSistema(nome, perfil, permissoes, salonNome){
   navTo(primeira);
   // Verificar alertas de retorno 2 segundos após carregar
   setTimeout(function(){ verificarRetornoPopup(); }, 2000);
+  // Iniciar monitoramento do WhatsApp (verifica a cada 2 min)
+  if(perfil === 'admin') setTimeout(iniciarMonitorWpp, 3000);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -8569,6 +8578,52 @@ function verificarStatusWpp(){
     else toast('Status: '+(d.status||'desconectado')+' — escaneie o QR e aguarde','err');
   });
 }
+
+// ── Monitoramento contínuo do WhatsApp ──────────────────────────────────────
+var _wppMonitorInterval = null;
+var _wppUltimoStatus = null;
+
+function iniciarMonitorWpp(){
+  if(_wppMonitorInterval) clearInterval(_wppMonitorInterval);
+  _atualizarBarraWpp(); // checar imediatamente
+  _wppMonitorInterval = setInterval(_atualizarBarraWpp, 120000); // a cada 2 minutos
+}
+
+function _atualizarBarraWpp(){
+  fetch('/api/wpp-ia/status').then(function(r){return r.json();}).then(function(d){
+    var bar  = document.getElementById('wpp-status-bar');
+    var dot  = document.getElementById('wpp-status-dot');
+    var txt  = document.getElementById('wpp-status-txt');
+    if(!bar) return;
+    var conectado = d.status === 'open';
+    var temConexao = d.status && d.status !== 'erro' && d.status !== '';
+    if(!temConexao){
+      // Sem instância configurada — esconder barra
+      bar.style.display = 'none';
+      return;
+    }
+    bar.style.display = 'flex';
+    if(conectado){
+      bar.style.background = 'rgba(16,185,129,.12)';
+      bar.style.color = '#065f46';
+      dot.style.background = '#10b981';
+      dot.style.boxShadow = '0 0 0 3px rgba(16,185,129,.25)';
+      txt.textContent = 'WhatsApp conectado';
+    } else {
+      bar.style.background = 'rgba(239,68,68,.12)';
+      bar.style.color = '#991b1b';
+      dot.style.background = '#ef4444';
+      dot.style.boxShadow = '0 0 0 3px rgba(239,68,68,.25)';
+      txt.textContent = '⚠️ WhatsApp desconectado';
+      // Alertar se mudou de conectado para desconectado
+      if(_wppUltimoStatus === 'open'){
+        toast('⚠️ WhatsApp desconectado! Clique em WhatsApp IA para reconectar.','err');
+      }
+    }
+    _wppUltimoStatus = d.status;
+  }).catch(function(){});
+}
+
 
 function reconfigWebhook(){
   toast('Configurando webhook...','');

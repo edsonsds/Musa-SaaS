@@ -3868,7 +3868,8 @@ function painelLembrete(){
   h += '<textarea id="ca-msg-'+t+'" class="fc" rows="4" placeholder="Oi {nome}! 💕 Lembrete do seu horário {quando} às {hora} para {servico}. Responda 1 para confirmar!"></textarea>';
   h += '<p class="txt-sm txt-m" style="margin-top:4px">Use: {nome} {hora} {servico} {quando}. Deixe vazio para usar a mensagem padrão.</p></div>';
   h += '<div style="display:flex;gap:8px;margin-top:8px"><button class="btn btn-p btn-sm" onclick="salvarLembrete()">💾 Salvar configuração</button>';
-  h += '<button class="btn btn-ghost btn-sm" onclick="dispararLembreteAgora()">📤 Enviar lembretes agora (teste)</button></div>';
+  h += '<button class="btn btn-ghost btn-sm" onclick="dispararLembreteAgora()">📤 Enviar lembretes agora (teste)</button>';
+  h += '<button class="btn btn-soft btn-sm" onclick="abrirDiagLembrete()">🔍 Diagnóstico</button></div>';
   h += '</div></div></div>';
   return h;
 }
@@ -3910,6 +3911,69 @@ function dispararLembreteAgora(){
     else toast('Erro ao enviar','err');
   }).catch(function(){toast('Erro ao enviar','err');});
 }
+
+function abrirDiagLembrete(){
+  fetch('/api/lembrete/diagnostico').then(function(r){return r.json();}).then(function(d){
+    var h = '';
+    // Status geral
+    h += '<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px">';
+    h += '<div class="card" style="padding:12px;flex:1;min-width:120px;text-align:center">';
+    h += '<div style="font-size:11px;color:var(--ink3)">Agora (Brasília)</div>';
+    h += '<div style="font-weight:700;color:var(--ink)">'+(d.agora_brasilia||'?')+'</div></div>';
+    h += '<div class="card" style="padding:12px;flex:1;min-width:120px;text-align:center">';
+    h += '<div style="font-size:11px;color:var(--ink3)">Lembrete ativo</div>';
+    h += '<div style="font-weight:700;color:'+(d.lembrete_ativo?'#10b981':'#ef4444')+'">'+(d.lembrete_ativo?'✓ Sim':'✗ Não')+'</div></div>';
+    h += '<div class="card" style="padding:12px;flex:1;min-width:120px;text-align:center">';
+    h += '<div style="font-size:11px;color:var(--ink3)">2h ativo</div>';
+    h += '<div style="font-weight:700;color:'+(d.lemb_2h_ativo?'#10b981':'#ef4444')+'">'+(d.lemb_2h_ativo?'✓ Sim':'✗ Não — ative nas configs')+'</div></div>';
+    h += '</div>';
+
+    // Janelas
+    (d.janelas||[]).forEach(function(j){
+      h += '<div style="font-weight:700;font-size:13px;margin:12px 0 6px">⏰ '+j.antecedencia+' — alvo: '+j.alvo_hora+'</div>';
+      if(!j.agendamentos.length){
+        h += '<div style="font-size:12px;color:var(--ink3);padding:8px;background:var(--bg2);border-radius:8px">Nenhum agendamento nesta janela</div>';
+      } else {
+        j.agendamentos.forEach(function(ag){
+          var cor = ag.ja_enviado ? '#10b981' : (ag.na_janela ? '#f59e0b' : 'var(--ink3)');
+          h += '<div style="border:1px solid var(--bdr);border-radius:10px;padding:10px 12px;margin-bottom:6px;font-size:12px">';
+          h += '<div style="font-weight:600">'+ag.cliente+' — '+ag.horario+' ('+ag.servico+')</div>';
+          h += '<div style="color:'+cor+'">'+
+            (ag.ja_enviado ? '✓ Já enviado' : (ag.na_janela ? '⚡ Na janela de envio agora!' : 'Fora da janela ('+ag.delta_min+'min)'))+'</div>';
+          h += '<div style="color:var(--ink3)">Status: '+ag.status+' · Tel: '+ag.tel+'</div>';
+          h += '</div>';
+        });
+      }
+    });
+
+    // Teste de envio
+    h += '<div style="margin-top:16px;border-top:1px solid var(--bdr);padding-top:14px">';
+    h += '<div style="font-weight:700;font-size:13px;margin-bottom:8px">📱 Enviar mensagem de teste</div>';
+    h += '<div style="display:flex;gap:8px;flex-wrap:wrap">';
+    h += '<input id="diag-tel" class="fc" type="tel" placeholder="5511999999999" style="flex:1;min-width:160px">';
+    h += '<select id="diag-ant" class="fc" style="width:100px"><option value="2h">2 horas</option><option value="1dia">1 dia</option><option value="1h">1 hora</option></select>';
+    h += '<button class="btn btn-p" onclick="enviarTesteWpp()">Enviar teste</button>';
+    h += '</div>';
+    h += '<div style="font-size:11px;color:var(--ink3);margin-top:4px">Digite o número com DDI+DDD (ex: 5511999999999). Vai chegar uma mensagem de teste no WhatsApp.</div>';
+    h += '</div>';
+
+    openG('🔍 Diagnóstico — Lembrete de Agendamento', h,
+      '<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Fechar</button>', 540);
+  }).catch(function(){ toast('Erro ao carregar diagnóstico','err'); });
+}
+
+function enviarTesteWpp(){
+  var num = (document.getElementById('diag-tel').value||'').trim().replace(/\D/g,'');
+  var ant = document.getElementById('diag-ant').value;
+  if(!num){ toast('Digite o número','err'); return; }
+  fetch('/api/lembrete/teste-envio',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({numero:num, antecedencia:ant})})
+  .then(function(r){return r.json();}).then(function(d){
+    if(d.ok) toast('✓ Mensagem de teste enviada para '+num,'ok');
+    else toast('Falha: '+(d.erro||'verifique o WhatsApp'),'err');
+  }).catch(function(){ toast('Erro de conexão','err'); });
+}
+
 
 function painelContatoAuto(tipo){
   if(tipo==='lembrete') return painelLembrete();

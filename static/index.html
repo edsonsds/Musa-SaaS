@@ -1133,7 +1133,7 @@ body.dark #m-resumo-foot{border-top-color:#2e2e42}
 <!-- ══ MODAL GENÉRICO ══ -->
 <div class="overlay" id="m-gen">
   <div class="modal" id="m-gen-inner">
-    <div class="modal-hdr"><h3 id="m-gen-title"></h3><button class="modal-x" onclick="closeM(\'m-gen\')">&#215;</button></div>
+    <div class="modal-hdr"><h3 id="m-gen-title"></h3><button class="modal-x" onclick="closeMG()">&#215;</button></div>
     <div class="modal-body" id="m-gen-body"></div>
     <div class="modal-foot" id="m-gen-foot"></div>
   </div>
@@ -1484,7 +1484,7 @@ function responderAdiantamento(did, reconhece, idx){
     method:'POST', headers:{'Content-Type':'application/json'},
     body: JSON.stringify({reconhece: reconhece})
   }).then(function(r){return r.json();}).then(function(d){
-    closeM('m-gen');
+    closeMG();
     toast(reconhece ? 'Adiantamento reconhecido!' : 'Marcado como contestado — o salão será avisado','ok');
     // Verifica se há mais pendentes
     fetch('/api/profissional/adiantamentos-pendentes').then(function(r){return r.json();}).then(function(lista){
@@ -1645,6 +1645,7 @@ function openG(title,body,foot,w){
   document.getElementById('m-gen-inner').style.width=(w||500)+'px';
   openM('m-gen');
 }
+function closeMG(){ closeM('m-gen'); }
 
 // ════ DASHBOARD ════
 function pgDash(){
@@ -2174,7 +2175,7 @@ function abrirFichaTecnica(cliIdParam, cliNomeParam){
       });
     }
     openG('🔬 Ficha Técnica — '+cliNome, h,
-      '<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Fechar</button>', 520);
+      '<button class="btn btn-ghost" onclick="closeMG()">Fechar</button>', 520);
   }).catch(function(){ toast('Erro ao carregar ficha','err'); });
 }
 
@@ -2191,7 +2192,7 @@ function salvarFichaTecnica(cliId, agId, svcNome){
     if(d.ok){
       toast('Observação salva!','ok');
       // Reabrir a ficha para mostrar o novo registro
-      closeM('m-gen');
+      closeMG();
       setTimeout(function(){ abrirFichaTecnica(); }, 200);
     } else {
       toast(d.erro||'Erro ao salvar','err');
@@ -2203,7 +2204,7 @@ function deletarFichaTecnica(cliId, fid){
   confirmarBalao('Excluir esta observação?','',function(){
     fetch('/api/ficha-tecnica/'+cliId+'/'+fid,{method:'DELETE'}).then(function(){
       toast('Excluída','ok');
-      closeM('m-gen');
+      closeMG();
       setTimeout(function(){ abrirFichaTecnica(); }, 200);
     });
   },'Excluir');
@@ -2213,7 +2214,7 @@ function abrirHistoricoCliente(){
   var cliId=document.getElementById('ag-cli').value;
   if(!cliId){toast('Selecione um cliente primeiro','err');return;}
   var nomeCli=document.getElementById('ag-cli-s').value||'Cliente';
-  openG('📋 Histórico — '+nomeCli,'<div id="hist-cli-body"><div class="spinner"></div></div>','<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Fechar</button>',560);
+  openG('📋 Histórico — '+nomeCli,'<div id="hist-cli-body"><div class="spinner"></div></div>','<button class="btn btn-ghost" onclick="closeMG()">Fechar</button>',560);
   fetch('/api/clientes/'+cliId).then(function(r){return r.json();}).then(function(d){
     var body=document.getElementById('hist-cli-body');if(!body)return;
     var hist=d.historico||[];var hh='';
@@ -2434,14 +2435,14 @@ function detalheCli(id){
       d.historico.forEach(function(a){h+='<tr><td>'+fmtD(a.data)+'</td><td>'+(a.svc_nome||'---')+'</td><td>'+(a.pro_nome||'---')+'</td><td>'+fmt(a.preco)+'</td><td>'+stBadge(a.status)+'</td></tr>';});
       h+='</tbody></table></div>';
     }
-    openG(c.nome,h,'<button class="btn btn-ghost btn-sm" onclick="openCliModal('+c.id+')">&#9999;&#65039; Editar</button><button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Fechar</button>',660);
+    openG(c.nome,h,'<button class="btn btn-ghost btn-sm" onclick="openCliModal('+c.id+')">&#9999;&#65039; Editar</button><button class="btn btn-ghost" onclick="closeMG()">Fechar</button>',660);
   });
 }
 function openCliModal(id){
   var h='<div class="fr"><div class="fg"><label class="fl">Nome *</label><input type="text" id="gcl-n" class="fc"></div><div class="fg"><label class="fl">Telefone</label><input type="text" id="gcl-t" class="fc"></div></div>';
   h+='<div class="fr"><div class="fg"><label class="fl">Email</label><input type="text" id="gcl-e" class="fc"></div><div class="fg"><label class="fl">CPF</label><input type="text" id="gcl-c" class="fc"></div></div>';
   h+='<div class="fr"><div class="fg"><label class="fl">Nascimento</label><input type="date" id="gcl-nasc" class="fc"></div><div class="fg"><label class="fl">Obs</label><input type="text" id="gcl-o" class="fc"></div></div>';
-  openG(id?'Editar Cliente':'Novo Cliente',h,'<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button><button class="btn btn-p" onclick="savCli('+(id||'null')+')">Salvar</button>',520);
+  openG(id?'Editar Cliente':'Novo Cliente',h,'<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button><button class="btn btn-p" onclick="savCli('+(id||'null')+')">Salvar</button>',520);
   if(id) fetch('/api/clientes/'+id).then(function(r){return r.json();}).then(function(d){var c=d.cliente;document.getElementById('gcl-n').value=c.nome||'';document.getElementById('gcl-t').value=c.tel||'';document.getElementById('gcl-e').value=c.email||'';document.getElementById('gcl-c').value=c.cpf||'';document.getElementById('gcl-nasc').value=c.nasc||'';document.getElementById('gcl-o').value=c.obs||'';});
 }
 function savCli(id){
@@ -2450,7 +2451,7 @@ function savCli(id){
   var p={nome:nome,tel:document.getElementById('gcl-t').value,email:document.getElementById('gcl-e').value,cpf:document.getElementById('gcl-c').value,nasc:document.getElementById('gcl-nasc').value,obs:document.getElementById('gcl-o').value,ativo:1};
   fetch(id?'/api/clientes/'+id:'/api/clientes',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}).then(function(r){return r.json();}).then(function(d){
     if(d.ok===false){toast(d.erro||'Erro','err');return;}
-    toast('Cliente salvo!','ok');closeM('m-gen');pgClis();loadGlobals();
+    toast('Cliente salvo!','ok');closeMG();pgClis();loadGlobals();
   });
 }
 function pgDups(){
@@ -2462,7 +2463,7 @@ function pgDups(){
       h+='<div class="fw6">&#128222; '+r.tel+' <span class="badge bg-r">'+r.qtd+'x</span></div>';
       h+='<div class="txt-sm" style="margin-top:5px">'+r.nomes+'</div></div>';
     });
-    openG('Telefones Duplicados',h,'<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Fechar</button>',500);
+    openG('Telefones Duplicados',h,'<button class="btn btn-ghost" onclick="closeMG()">Fechar</button>',500);
   });
 }
 
@@ -2639,7 +2640,7 @@ function abrirLemSemModal(svid) {
   h += '✨ A cada envio, a IA escreve uma mensagem nova e diferente — fica mais natural e nunca repete igual.</div>';
 
   openG('💅 Lembrete Semanal', h,
-    '<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button>' +
+    '<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button>' +
     '<button class="btn btn-p" onclick="salvarLemSem('+svid+')">💾 Salvar</button>', 540);
 
   setTimeout(function(){
@@ -2691,7 +2692,7 @@ function salvarLemSem(svid) {
       toast('Lembrete semanal salvo! ✓','ok');
       var sv=_svcs.find(function(s){return s.id===svid;});
       if(sv){ sv.lembrete_semanal=ativo?1:0; sv.lembrete_semanal_modo=modo; sv.lembrete_semanal_texto=texto; }
-      closeM('m-gen'); pgSvcs();
+      closeMG(); pgSvcs();
     } else toast('Erro ao salvar','err');
   }).catch(function(){toast('Erro de conexão','err');});
 }
@@ -2898,7 +2899,7 @@ function abrirPosModal(svid) {
   h += '<button class="btn btn-soft btn-sm" onclick="gerarPosIa('+svid+')" style="margin-top:8px">✨ Gerar sugestão com IA</button>';
 
   openG('Cuidados Pós-Atendimento', h,
-    '<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button>' +
+    '<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button>' +
     '<button class="btn btn-p" onclick="salvarPos('+svid+')">💾 Salvar</button>', 540);
 
   setTimeout(function(){
@@ -2932,7 +2933,7 @@ function salvarPos(svid) {
       toast('Cuidado pós-atendimento salvo! ✓','ok');
       var sv=_svcs.find(function(s){return s.id===svid;});
       if(sv){ sv.pos_ativo=ativo?1:0; sv.pos_texto=texto; }
-      closeM('m-gen'); pgSvcs();
+      closeMG(); pgSvcs();
     } else toast('Erro ao salvar','err');
   }).catch(function(){toast('Erro de conexão','err');});
 }
@@ -2977,7 +2978,7 @@ function openSvcModal(id){
   h += '<div class="fg"><label class="fl" style="display:flex;align-items:center;gap:8px">Ativo';
   h += '<label class="toggle"><input type="checkbox" id="gs-at" checked><span class="tgl"></span></label></label></div>';
   openG(id?'Editar Serviço':'Novo Serviço', h,
-    '<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button>'+
+    '<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button>'+
     '<button class="btn btn-p" onclick="savSvc('+(id||'null')+')">Salvar</button>', 500);
   if(id){
     fetch('/api/servicos/'+id).then(function(r){return r.json();}).then(function(s){
@@ -3007,7 +3008,7 @@ function savSvc(id){
     body:JSON.stringify(p)
   }).then(function(){
     toast('Serviço salvo!','ok');
-    closeM('m-gen');
+    closeMG();
     pgSvcs();
     loadGlobals();
   });
@@ -3038,12 +3039,12 @@ function pgCaixa(){
 function openSangriaM(){
   var h='<div class="fg"><label class="fl">Valor (R$)</label><input type="number" id="sg-v" class="fc" step="0.01" min="0"></div>';
   h+='<div class="fg"><label class="fl">Descrição</label><input type="text" id="sg-d" class="fc" placeholder="Motivo..."></div>';
-  openG('Sangria / Retirada',h,'<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button><button class="btn btn-r" onclick="confSangria()">Confirmar</button>',400);
+  openG('Sangria / Retirada',h,'<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button><button class="btn btn-r" onclick="confSangria()">Confirmar</button>',400);
 }
 function confSangria(){
   if(!podeAcao('abrir_fechar_caixa')){toast('Sem permissão para sangria','err');return;}
   var v=parseFloat(document.getElementById('sg-v').value||0);if(v<=0){toast('Valor inválido','err');return;}
-  fetch('/api/caixa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:'saida',descricao:document.getElementById('sg-d').value||'Sangria',valor:v,data:today()})}).then(function(){toast('Sangria registrada!','ok');closeM('m-gen');pgCaixa();});
+  fetch('/api/caixa',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({tipo:'saida',descricao:document.getElementById('sg-d').value||'Sangria',valor:v,data:today()})}).then(function(){toast('Sangria registrada!','ok');closeMG();pgCaixa();});
 }
 
 // ════ COMANDAS ════
@@ -3390,7 +3391,7 @@ function salvarEditDesp(id) {
       vencimento: document.getElementById('ed-vc').value
     })
   }).then(function(r){return r.json();}).then(function(d){
-    if(d.ok){toast('Despesa atualizada!','ok');closeM('m-gen');pgDesp();}
+    if(d.ok){toast('Despesa atualizada!','ok');closeMG();pgDesp();}
     else toast('Erro ao salvar','err');
   });
 }
@@ -3404,7 +3405,7 @@ function openDespModal(){
      (_pros||[]).filter(function(p){return p.ativo;}).map(function(p){return '<option value="'+p.id+'">'+p.nome+'</option>';}).join('')+
      '</select><div style="font-size:11px;color:var(--ink3);margin-top:4px">O valor será descontado da comissão dele(a) no período, e ele(a) verá um aviso para reconhecer.</div></div>';
   h+='</div>';
-  openG('Nova Despesa',h,'<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button><button class="btn btn-p" onclick="savDesp()">Salvar</button>',460);
+  openG('Nova Despesa',h,'<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button><button class="btn btn-p" onclick="savDesp()">Salvar</button>',460);
 }
 function toggleAdtoPro(){
   var on=document.getElementById('gd-adto').checked;
@@ -3416,7 +3417,7 @@ function savDesp(){
   var ehAdto=document.getElementById('gd-adto').checked;
   var proId=ehAdto?parseInt(document.getElementById('gd-pro').value||0):0;
   if(ehAdto && !proId){toast('Selecione o profissional do adiantamento','err');return;}
-  fetch('/api/despesas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:document.getElementById('gd-dt').value,descricao:d,valor:v,categoria:ehAdto?'Adiantamento':document.getElementById('gd-c').value,pago:document.getElementById('gd-pg').checked?1:0,eh_adiantamento:ehAdto,pro_id:proId})}).then(function(){toast('Salva!','ok');closeM('m-gen');pgDesp();});
+  fetch('/api/despesas',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:document.getElementById('gd-dt').value,descricao:d,valor:v,categoria:ehAdto?'Adiantamento':document.getElementById('gd-c').value,pago:document.getElementById('gd-pg').checked?1:0,eh_adiantamento:ehAdto,pro_id:proId})}).then(function(){toast('Salva!','ok');closeMG();pgDesp();});
 }
 function delDesp(id){confirmarBalao('Excluir esta despesa?','',function(){fetch('/api/despesas/'+id,{method:'DELETE'}).then(function(){toast('Excluída!','ok');pgDesp();});},'Excluir');}
 
@@ -3445,12 +3446,12 @@ function openAgFinModal(){
   var h='<div class="fr"><div class="fg"><label class="fl">Data *</label><input type="date" id="gaf-dt" class="fc" value="'+today()+'"></div><div class="fg"><label class="fl">Tipo</label><select id="gaf-ti" class="fc"><option value="receita">Receita</option><option value="despesa">Despesa</option></select></div></div>';
   h+='<div class="fr"><div class="fg"><label class="fl">Descrição *</label><input type="text" id="gaf-ds" class="fc"></div><div class="fg"><label class="fl">Valor (R$) *</label><input type="number" id="gaf-vl" class="fc" step="0.01" min="0"></div></div>';
   h+='<div class="fg"><label class="fl" style="display:flex;align-items:center;gap:8px">Já realizado? <label class="toggle"><input type="checkbox" id="gaf-re"><span class="tgl"></span></label></label></div>';
-  openG('Novo Lançamento',h,'<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button><button class="btn btn-p" onclick="savAgFin()">Salvar</button>',460);
+  openG('Novo Lançamento',h,'<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button><button class="btn btn-p" onclick="savAgFin()">Salvar</button>',460);
 }
 function savAgFin(){
   var d=document.getElementById('gaf-ds').value.trim(),v=parseFloat(document.getElementById('gaf-vl').value||0);
   if(!d||v<=0){toast('Preencha todos os campos','err');return;}
-  fetch('/api/agenda-financeira',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:document.getElementById('gaf-dt').value,descricao:d,valor:v,tipo:document.getElementById('gaf-ti').value,realizado:document.getElementById('gaf-re').checked?1:0})}).then(function(){toast('Salvo!','ok');closeM('m-gen');pgAgFin();});
+  fetch('/api/agenda-financeira',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:document.getElementById('gaf-dt').value,descricao:d,valor:v,tipo:document.getElementById('gaf-ti').value,realizado:document.getElementById('gaf-re').checked?1:0})}).then(function(){toast('Salvo!','ok');closeMG();pgAgFin();});
 }
 function delAgFin(id){confirmarBalao('Excluir este lançamento?','',function(){fetch('/api/agenda-financeira/'+id,{method:'DELETE'}).then(function(){pgAgFin();});},'Excluir');}
 
@@ -3500,13 +3501,13 @@ function pgEst(){
 function openEstModal(id){
   var h='<div class="fr"><div class="fg"><label class="fl">Nome *</label><input type="text" id="ge-n" class="fc"></div><div class="fg"><label class="fl">Categoria</label><input type="text" id="ge-c" class="fc"></div></div>';
   h+='<div class="fr3"><div class="fg"><label class="fl">Quantidade</label><input type="number" id="ge-q" class="fc" value="0" step="0.1"></div><div class="fg"><label class="fl">Mínimo</label><input type="number" id="ge-m" class="fc" value="0" step="0.1"></div><div class="fg"><label class="fl">Unidade</label><input type="text" id="ge-u" class="fc" value="un"></div></div>';
-  openG(id?'Editar Item':'Novo Item',h,'<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button><button class="btn btn-p" onclick="savEst('+(id||'null')+')">Salvar</button>',460);
+  openG(id?'Editar Item':'Novo Item',h,'<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button><button class="btn btn-p" onclick="savEst('+(id||'null')+')">Salvar</button>',460);
   if(id) fetch('/api/estoque').then(function(r){return r.json();}).then(function(its){var e=its.find(function(i){return i.id==id;});if(e){document.getElementById('ge-n').value=e.nome||'';document.getElementById('ge-c').value=e.categoria||'';document.getElementById('ge-q').value=e.quantidade||0;document.getElementById('ge-m').value=e.minimo||0;document.getElementById('ge-u').value=e.unidade||'un';}});
 }
 function savEst(id){
   var n=document.getElementById('ge-n').value.trim();if(!n){toast('Nome obrigatório','err');return;}
   var p={nome:n,categoria:document.getElementById('ge-c').value,quantidade:parseFloat(document.getElementById('ge-q').value||0),minimo:parseFloat(document.getElementById('ge-m').value||0),unidade:document.getElementById('ge-u').value||'un'};
-  fetch(id?'/api/estoque/'+id:'/api/estoque',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}).then(function(){toast('Salvo!','ok');closeM('m-gen');pgEst();});
+  fetch(id?'/api/estoque/'+id:'/api/estoque',{method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(p)}).then(function(){toast('Salvo!','ok');closeMG();pgEst();});
 }
 function delEst(id){confirmarBalao('Excluir este item do estoque?','',function(){fetch('/api/estoque/'+id,{method:'DELETE'}).then(function(){toast('Excluído!','ok');pgEst();});},'Excluir');}
 
@@ -3527,11 +3528,11 @@ function openVarModal(){
   var h='<div class="fr"><div class="fg"><label class="fl">Produto *</label><input type="text" id="gv-p" class="fc"></div><div class="fg"><label class="fl">Data</label><input type="date" id="gv-dt" class="fc" value="'+today()+'"></div></div>';
   h+='<div class="fr"><div class="fg"><label class="fl">Qtd</label><input type="number" id="gv-q" class="fc" value="1" step="0.1" min="0.1"></div><div class="fg"><label class="fl">Preço Unit. (R$)</label><input type="number" id="gv-pu" class="fc" step="0.01" min="0"></div></div>';
   h+='<div class="fg"><label class="fl">Forma Pgto</label><select id="gv-pg" class="fc">'+_taxas.map(function(t){return '<option>'+t.pag+'</option>';}).join('')+'</select></div>';
-  openG('Nova Venda',h,'<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button><button class="btn btn-p" onclick="savVar()">Registrar</button>',440);
+  openG('Nova Venda',h,'<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button><button class="btn btn-p" onclick="savVar()">Registrar</button>',440);
 }
 function savVar(){
   var p=document.getElementById('gv-p').value.trim();if(!p){toast('Produto obrigatório','err');return;}
-  fetch('/api/varejo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:document.getElementById('gv-dt').value,produto:p,quantidade:parseFloat(document.getElementById('gv-q').value||1),preco_unit:parseFloat(document.getElementById('gv-pu').value||0),pag:document.getElementById('gv-pg').value})}).then(function(){toast('Venda registrada!','ok');closeM('m-gen');pgVar();});
+  fetch('/api/varejo',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:document.getElementById('gv-dt').value,produto:p,quantidade:parseFloat(document.getElementById('gv-q').value||1),preco_unit:parseFloat(document.getElementById('gv-pu').value||0),pag:document.getElementById('gv-pg').value})}).then(function(){toast('Venda registrada!','ok');closeMG();pgVar();});
 }
 
 // ════ OCORRÊNCIAS ════
@@ -3548,11 +3549,11 @@ function openOcorModal(){
   var h='<div class="fr"><div class="fg"><label class="fl">Data</label><input type="date" id="go-dt" class="fc" value="'+today()+'"></div><div class="fg"><label class="fl">Tipo</label><input type="text" id="go-ti" class="fc" list="oc-ti"><datalist id="oc-ti"><option value="Reclamação"><option value="Acidente"><option value="Elogio"></datalist></div></div>';
   h+='<div class="fg"><label class="fl">Profissional</label><select id="go-pr" class="fc"><option value="0">Nenhum</option>'+_pros.map(function(p){return '<option value="'+p.id+'">'+p.nome+'</option>';}).join('')+'</select></div>';
   h+='<div class="fg"><label class="fl">Descrição *</label><textarea id="go-ds" class="fc" rows="3"></textarea></div>';
-  openG('Nova Ocorrência',h,'<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button><button class="btn btn-p" onclick="savOcor()">Salvar</button>',460);
+  openG('Nova Ocorrência',h,'<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button><button class="btn btn-p" onclick="savOcor()">Salvar</button>',460);
 }
 function savOcor(){
   var d=document.getElementById('go-ds').value.trim();if(!d){toast('Descrição obrigatória','err');return;}
-  fetch('/api/ocorrencias',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:document.getElementById('go-dt').value,tipo:document.getElementById('go-ti').value,pro_id:document.getElementById('go-pr').value,descricao:d})}).then(function(){toast('Salva!','ok');closeM('m-gen');pgOcor();});
+  fetch('/api/ocorrencias',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:document.getElementById('go-dt').value,tipo:document.getElementById('go-ti').value,pro_id:document.getElementById('go-pr').value,descricao:d})}).then(function(){toast('Salva!','ok');closeMG();pgOcor();});
 }
 
 // ════ AVALIAÇÕES ════
@@ -3570,10 +3571,10 @@ function pgAval(){
 function openAvalModal(){
   var h='<div class="fr"><div class="fg"><label class="fl">Data</label><input type="date" id="ga-dt" class="fc" value="'+today()+'"></div><div class="fg"><label class="fl">Nota (1-5)</label><input type="number" id="ga-nt" class="fc" value="5" min="1" max="5"></div></div>';
   h+='<div class="fg"><label class="fl">Comentário</label><textarea id="ga-cm" class="fc" rows="3"></textarea></div>';
-  openG('Nova Avaliação',h,'<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button><button class="btn btn-p" onclick="savAval()">Salvar</button>',420);
+  openG('Nova Avaliação',h,'<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button><button class="btn btn-p" onclick="savAval()">Salvar</button>',420);
 }
 function savAval(){
-  fetch('/api/avaliacoes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:document.getElementById('ga-dt').value,nota:parseInt(document.getElementById('ga-nt').value||5),comentario:document.getElementById('ga-cm').value})}).then(function(){toast('Salva!','ok');closeM('m-gen');pgAval();});
+  fetch('/api/avaliacoes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:document.getElementById('ga-dt').value,nota:parseInt(document.getElementById('ga-nt').value||5),comentario:document.getElementById('ga-cm').value})}).then(function(){toast('Salva!','ok');closeMG();pgAval();});
 }
 
 // ════ IMPORTAR ════
@@ -3713,7 +3714,7 @@ function addSvcModal(){
   h+='</select></div>';
   h+='<div class="fr"><div class="fg"><label class="fl">Início</label><input type="time" id="as-hi" class="fc" value="'+(_agAtual.h_fim||'')+'"></div><div class="fg"><label class="fl">Fim</label><input type="time" id="as-hf" class="fc"></div></div>';
   h+='<div class="fg"><label class="fl">Preço (R$)</label><input type="number" id="as-pr" class="fc" step="0.01" min="0"></div>';
-  openG('Adicionar Serviço',h,'<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button><button class="btn btn-p" onclick="savSvcExtra()">Adicionar</button>',440);
+  openG('Adicionar Serviço',h,'<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button><button class="btn btn-p" onclick="savSvcExtra()">Adicionar</button>',440);
 }
 function onAddSvc(){
   var sel=document.getElementById('as-svc'),opt=sel.options[sel.selectedIndex];
@@ -3756,7 +3757,7 @@ function savSvcExtra(){
   var proEl=document.getElementById('as-pro');
   var proId=proEl?proEl.value:_agAtual.pro_id;
   if(!sId||!hi||!hf||!proId){toast('Preencha todos os campos','err');return;}
-  fetch('/api/agendamentos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cli_id:_agAtual.cli_id,pro_id:parseInt(proId),svc_id:parseInt(sId),data:_agAtual.data,h_ini:hi,h_fim:hf,preco:pr,status:'agendado'})}).then(function(){toast('Serviço adicionado!','ok');closeM('m-gen');closeM('m-ag');if(_pg==='agenda')fetchAgs();else if(_pg==='dashboard')pgDash();});
+  fetch('/api/agendamentos',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cli_id:_agAtual.cli_id,pro_id:parseInt(proId),svc_id:parseInt(sId),data:_agAtual.data,h_ini:hi,h_fim:hf,preco:pr,status:'agendado'})}).then(function(){toast('Serviço adicionado!','ok');closeMG();closeM('m-ag');if(_pg==='agenda')fetchAgs();else if(_pg==='dashboard')pgDash();});
 }
 
 // ════ CROP FOTO ════
@@ -3958,7 +3959,7 @@ function abrirDiagLembrete(){
     h += '</div>';
 
     openG('🔍 Diagnóstico — Lembrete de Agendamento', h,
-      '<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Fechar</button>', 540);
+      '<button class="btn btn-ghost" onclick="closeMG()">Fechar</button>', 540);
   }).catch(function(){ toast('Erro ao carregar diagnóstico','err'); });
 }
 
@@ -5229,7 +5230,7 @@ function abrirBloqueioModal(proId, data, hora) {
   h += '<div class="fg"><label class="fl">Hora Inicio</label><input type="time" id="blq-hi" class="fc" value="' + (hora || '09:00') + '"></div>';
   h += '<div class="fg"><label class="fl">Hora Fim</label><input type="time" id="blq-hf" class="fc" value="18:00"></div></div>';
   openG('Bloquear Horario', h,
-    '<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button>' +
+    '<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button>' +
     '<button class="btn btn-r" onclick="salvarBloqueio()">Bloquear</button>', 480);
 }
 
@@ -5246,7 +5247,7 @@ function salvarBloqueio() {
       data_fim: df + ' ' + (document.getElementById('blq-hf').value || '23:59'),
       motivo: document.getElementById('blq-mot').value || 'Bloqueado'
     })
-  }).then(function() { toast('Horario bloqueado!', 'ok'); closeM('m-gen'); fetchAgs(); });
+  }).then(function() { toast('Horario bloqueado!', 'ok'); closeMG(); fetchAgs(); });
 }
 
 function ctxBloquear() {
@@ -5292,7 +5293,7 @@ function salvarBloqueioEdit(iid) {
       motivo: document.getElementById('ble-mot').value || 'Bloqueado'
     })
   }).then(function(r){return r.json();}).then(function(d){
-    if(d.ok){ toast('Bloqueio atualizado!','ok'); closeM('m-gen'); fetchAgs(); }
+    if(d.ok){ toast('Bloqueio atualizado!','ok'); closeMG(); fetchAgs(); }
     else toast('Erro ao salvar','err');
   }).catch(function(){toast('Erro de conexão','err');});
 }
@@ -5300,7 +5301,7 @@ function salvarBloqueioEdit(iid) {
 function excluirBloqueio(iid) {
   confirmarBalao('Excluir este bloqueio?', 'O horário voltará a ficar disponível para agendamentos.', function(){
     fetch('/api/indisponibilidades/' + iid, {method:'DELETE'}).then(function(r){return r.json();}).then(function(d){
-      if(d.ok){ toast('Bloqueio removido!','ok'); closeM('m-gen'); fetchAgs(); }
+      if(d.ok){ toast('Bloqueio removido!','ok'); closeMG(); fetchAgs(); }
       else toast('Erro ao excluir','err');
     }).catch(function(){toast('Erro de conexão','err');});
   }, 'Excluir', '#dc2626');
@@ -5317,7 +5318,7 @@ function abrirRecorrenteModal() {
   h += '<input type="number" id="rec-rep" class="fc" value="3" min="2" max="12"></div></div>';
   h += '<div id="rec-preview" class="txt-sm txt-m" style="margin-top:8px">Gerara 3 agendamentos</div>';
   openG('Agendamento Recorrente', h,
-    '<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button>' +
+    '<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button>' +
     '<button class="btn btn-p" onclick="salvarRecorrente()">Criar Agendamentos</button>', 460);
   // Preview dinâmico
   setTimeout(function() {
@@ -5355,7 +5356,7 @@ function salvarRecorrente() {
     })
   }).then(function(r){return r.json();}).then(function(d){
     toast(d.total + ' agendamentos criados!', 'ok');
-    closeM('m-gen'); closeM('m-ag');
+    closeMG(); closeM('m-ag');
     if (_pg === 'agenda') fetchAgs();
   });
 }
@@ -5503,7 +5504,7 @@ function openFilaModal() {
   h += '<div class="fr"><div class="fg"><label class="fl">Data Preferencia</label><input type="date" id="fila-dt" class="fc"></div>';
   h += '<div class="fg"><label class="fl">Observacoes</label><input type="text" id="fila-obs" class="fc" placeholder="Ex: qualquer horario manha"></div></div>';
   openG('Adicionar a Fila de Espera', h,
-    '<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button>' +
+    '<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button>' +
     '<button class="btn btn-p" onclick="salvarFila()">Adicionar</button>', 500);
 }
 
@@ -5537,7 +5538,7 @@ function salvarFila() {
       data_preferencia: document.getElementById('fila-dt').value,
       obs: document.getElementById('fila-obs').value
     })
-  }).then(function(){ toast('Adicionado a fila!', 'ok'); closeM('m-gen'); pgFilaEspera(); });
+  }).then(function(){ toast('Adicionado a fila!', 'ok'); closeMG(); pgFilaEspera(); });
 }
 
 function removerFila(id) {
@@ -5554,7 +5555,7 @@ function verHistoricoAg(id) {
       h += '<tr><td class="txt-sm">' + r.criado_em + '</td><td class="fw6">' + r.campo + '</td><td style="color:var(--r)">' + (r.valor_antes||'---') + '</td><td style="color:var(--g)">' + (r.valor_depois||'---') + '</td></tr>';
     });
     h += '</tbody></table></div>';
-    openG('Historico de Alteracoes', h, '<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Fechar</button>', 600);
+    openG('Historico de Alteracoes', h, '<button class="btn btn-ghost" onclick="closeMG()">Fechar</button>', 600);
   });
 }
 
@@ -5800,7 +5801,7 @@ function openProModal(id) {
   h += '</div>';
 
   openG(id ? 'Editar Profissional' : 'Novo Profissional', h,
-    '<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button>' +
+    '<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button>' +
     '<button class="btn btn-p" onclick="savProComCat(' + (id || 'null') + ')">Salvar</button>',
     600);
 
@@ -5878,7 +5879,7 @@ function delPro(id) {
   fetch('/api/profissionais/' + id, { method: 'DELETE' }).then(function(r) { return r.json(); }).then(function(d) {
     if (d.ok === false) { toast(d.erro || 'Erro', 'err'); return; }
     try { localStorage.removeItem('bjpro_svc_com_' + id); } catch(e) {}
-    toast('Profissional excluido!', 'ok'); closeM('m-gen'); pgPros(); loadGlobals();
+    toast('Profissional excluido!', 'ok'); closeMG(); pgPros(); loadGlobals();
   });
 }
 
@@ -5991,13 +5992,13 @@ function savProComCat(id) {
       var msg = nome + ' salvo!';
       if (nSvcs > 0) msg += ' ' + nSvcs + ' serviço(s) configurado(s)';
       toast(msg, 'ok');
-      closeM('m-gen');
+      closeMG();
       pgPros();
       loadGlobals();
     }).catch(function() {
       // Mesmo se config falhar, dados básicos foram salvos
       toast(nome + ' salvo! (config serviços com erro)', 'ok');
-      closeM('m-gen');
+      closeMG();
       pgPros();
       loadGlobals();
     });
@@ -6962,7 +6963,7 @@ function salvarComVarejo() {
       obs:         document.getElementById('nv-obs').value
     })
   }).then(function(r){return r.json();}).then(function(d){
-    if (d.ok) { toast('Venda registrada!', 'ok'); closeM('m-gen'); pgComVarejo(); }
+    if (d.ok) { toast('Venda registrada!', 'ok'); closeMG(); pgComVarejo(); }
     else toast(d.erro || 'Erro', 'err');
   });
 }
@@ -7057,7 +7058,7 @@ function redefinirSenha() {
   }).then(function(r) { return r.json(); }).then(function(d) {
     if (d.ok) {
       toast('Senha alterada com sucesso!', 'ok');
-      closeM('m-gen');
+      closeMG();
     } else {
       toast(d.erro || 'Erro ao redefinir', 'err');
     }
@@ -7080,7 +7081,7 @@ function salvarNovaCategoria() {
   if (!nome) { toast('Informe o nome da categoria', 'err'); return; }
   // Criar um serviço placeholder para a categoria existir
   // Abre modal de novo serviço já com a categoria preenchida
-  closeM('m-gen');
+  closeMG();
   openSvcModalCat(nome);
 }
 
@@ -7573,12 +7574,12 @@ function savProComCat(id) {
         } else {
           toast(payload.nome + ' salvo! Nenhum servico com comissao ativo.', 'ok');
         }
-        closeM('m-gen');
+        closeMG();
         pgPros();
         loadGlobals();
       }).catch(function() {
         toast(payload.nome + ' salvo! (erro ao salvar comissoes — tente novamente)', 'ok');
-        closeM('m-gen'); pgPros(); loadGlobals();
+        closeMG(); pgPros(); loadGlobals();
       });
     });
 }
@@ -7631,7 +7632,7 @@ function openProModal(id) {
   h += '<div id="com-sec"><div class="spinner" style="margin:10px auto"></div></div>';
 
   openG(id ? 'Editar Profissional' : 'Novo Profissional', h,
-    '<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button>'
+    '<button class="btn btn-ghost" onclick="closeMG()">Cancelar</button>'
     + '<button class="btn btn-p" onclick="savProComCat(' + (id||'null') + ')">Salvar</button>',
     600);
 
@@ -8602,7 +8603,7 @@ function testarIa(){
   .then(function(r){return r.json();}).then(function(d){
     if(d.ok){
       var h2='<div style="padding:12px;background:#f9f9f9;border-radius:10px">'+d.resposta+'</div>';
-      var f2='<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Fechar</button>';
+      var f2='<button class="btn btn-ghost" onclick="closeMG()">Fechar</button>';
       openG('IA respondeu',h2,f2,480);
     } else {
       toast('Erro: '+(d.erro||'falha'),'err');
@@ -8671,7 +8672,7 @@ function verConversaWpp(numero,nome){
     });
     h+='</div>';
     var rodape = '<button class="btn btn-ghost" onclick="limparConversaWpp(\''+numero.replace(/'/g,'')+'\')" style="color:var(--r)">🗑️ Limpar conversa</button>'
-               + '<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Fechar</button>';
+               + '<button class="btn btn-ghost" onclick="closeMG()">Fechar</button>';
     openG('💬 '+nome,h,rodape,520);
   });
 }
@@ -8680,7 +8681,7 @@ function limparConversaWpp(numero){
   confirmarBalao('Apagar todo o histórico desta conversa?','A IA vai recomeçar do zero com este cliente.',function(){
     fetch('/api/wpp-ia/conversa/'+encodeURIComponent(numero)+'/limpar',{method:'POST'})
     .then(function(r){return r.json();}).then(function(d){
-      if(d.ok){toast('Conversa limpa! ✓','ok');closeM('m-gen');carregarConversasWpp();}
+      if(d.ok){toast('Conversa limpa! ✓','ok');closeMG();carregarConversasWpp();}
       else toast('Erro ao limpar','err');
     }).catch(function(){toast('Erro ao limpar','err');});
   }, 'Apagar');

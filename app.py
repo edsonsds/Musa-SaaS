@@ -3999,11 +3999,11 @@ def _enviar_email(destinatario, assunto, corpo):
         return False
 
 def _enviar_wpp(sid, numero, texto):
-    """Envia uma mensagem de WhatsApp via Evolution. Retorna True/False."""
+    """Envia mensagem via Evolution API. Retorna True/False."""
     import urllib.request as _ur, urllib.error as _ue, json as _js
     conn = db_exec("SELECT * FROM wpp_conexoes WHERE salon_id=%s", (sid,), 'one')
     if not conn:
-        _log_wpp(sid, 'FALHA: sem conexao cadastrada para salon_id=' + str(sid))
+        _log_wpp(sid, 'FALHA: sem conexao para salon_id=' + str(sid))
         return False
     evo_url = db_exec("SELECT valor FROM sistema_global WHERE chave='evolution_url'", fetch='one')
     evo_key = db_exec("SELECT valor FROM sistema_global WHERE chave='evolution_apikey'", fetch='one')
@@ -4016,29 +4016,29 @@ def _enviar_wpp(sid, numero, texto):
         return False
     if not num.startswith('55') and len(num) <= 11:
         num = '55' + num
-    erros = []
-    for pl in [{'number': num, 'text': texto}, {'number': num, 'textMessage': {'text': texto}}]:
-        try:
-            req = _ur.Request(eurl + '/message/sendText/' + inst,
-                              data=_js.dumps(pl).encode(),
-                              headers={'Content-Type': 'application/json', 'apikey': ekey}, method='POST')
-            with _ur.urlopen(req, timeout=15) as resp:
-                status = resp.status
-                body = resp.read().decode('utf-8', errors='ignore')[:300]
-                if status in (200, 201):
-                    _log_wpp(sid, 'OK ' + str(status) + ' num=' + num + ' resp=' + body)
-                    return True
-                else:
-                    erros.append('HTTP ' + str(status) + ': ' + body)
-        except _ue.HTTPError as he:
-            body = ''
-            try: body = he.read().decode('utf-8', errors='ignore')[:200]
-            except: pass
-            erros.append('HTTPError ' + str(he.code) + ': ' + body)
-        except Exception as ex:
-            erros.append('ERR: ' + str(ex)[:120])
-    _log_wpp(sid, 'FALHA num=' + num + ' | ' + ' | '.join(erros))
-    return False
+    # Evolution API v2.3.7 — único formato aceito
+    payload = {'number': num, 'text': texto}
+    try:
+        req = _ur.Request(
+            eurl + '/message/sendText/' + inst,
+            data=_js.dumps(payload).encode(),
+            headers={'Content-Type': 'application/json', 'apikey': ekey},
+            method='POST'
+        )
+        with _ur.urlopen(req, timeout=15) as resp:
+            status = resp.status
+            body = resp.read().decode('utf-8', errors='ignore')[:300]
+            _log_wpp(sid, ('OK ' if status in (200,201) else 'FALHA ') + str(status) + ' num=' + num + ' resp=' + body)
+            return status in (200, 201)
+    except _ue.HTTPError as he:
+        body = ''
+        try: body = he.read().decode('utf-8', errors='ignore')[:200]
+        except: pass
+        _log_wpp(sid, 'HTTPError ' + str(he.code) + ' num=' + num + ': ' + body)
+        return False
+    except Exception as ex:
+        _log_wpp(sid, 'ERR num=' + num + ': ' + str(ex)[:150])
+        return False
 
 def _log_wpp(sid, msg):
     """Salva log do último envio WPP para diagnóstico."""
@@ -4942,41 +4942,33 @@ def wpp_webhook(sid):
     _instance      = conn['instance_name']
 
     def enviar_msg(numero, texto_resp):
-        """Envia mensagem via Evolution API (v1.7.4 usa textMessage)."""
+        """Envia mensagem via Evolution API v2.3.7."""
         import urllib.request as _ur, urllib.error as _ue, json as _js
-        # Número só com dígitos
         num = ''.join(ch for ch in numero if ch.isdigit())
-        # Garantir DDI 55 (Brasil) apenas se não tiver
         if not num.startswith('55') and len(num) <= 11:
             num = '55' + num
-        # v1.7.4 usa textMessage; v2.x usa text. Tentar ambos.
-        tentativas = [
-            {'number': num, 'textMessage': {'text': texto_resp}},
-            {'number': num, 'options': {'delay': 100, 'presence': 'composing'}, 'textMessage': {'text': texto_resp}},
-            {'number': num, 'text': texto_resp},
-        ]
-        log = []
-        for pl in tentativas:
-            try:
-                payload = _js.dumps(pl).encode()
-                req = _ur.Request(
-                    _evolution_url + '/message/sendText/' + _instance,
-                    data=payload,
-                    headers={'Content-Type': 'application/json', 'apikey': _api_key},
-                    method='POST'
-                )
-                with _ur.urlopen(req, timeout=15) as resp:
-                    body = resp.read().decode('utf-8', errors='ignore')
-                    log.append('OK ' + str(resp.status) + ' payload=' + _js.dumps(pl)[:60] + ' resp=' + body[:300])
-                    _salvar_envio_log(sid, 'SUCESSO', num, ' || '.join(log))
-                    return True
-            except _ue.HTTPError as he:
-                eb = he.read().decode('utf-8', errors='ignore')
-                log.append('HTTP ' + str(he.code) + ': ' + eb[:120])
-            except Exception as ex:
-                log.append('ERR: ' + str(ex)[:120])
-        _salvar_envio_log(sid, 'FALHA', num, ' | '.join(log))
-        return False
+        payload = {'number': num, 'text': texto_resp}
+        try:
+            req = _ur.Request(
+                _evolution_url + '/message/sendText/' + _instance,
+                data=_js.dumps(payload).encode(),
+                headers={'Content-Type': 'application/json', 'apikey': _api_key},
+                method='POST'
+            )
+            with _ur.urlopen(req, timeout=15) as resp:
+                body = resp.read().decode('utf-8', errors='ignore')
+                ok = resp.status in (200, 201)
+                _salvar_envio_log(sid, 'OK' if ok else 'FALHA', num, str(resp.status) + ' ' + body[:200])
+                return ok
+        except _ue.HTTPError as he:
+            eb = ''
+            try: eb = he.read().decode('utf-8', errors='ignore')[:200]
+            except: pass
+            _salvar_envio_log(sid, 'FALHA', num, 'HTTP ' + str(he.code) + ': ' + eb)
+            return False
+        except Exception as ex:
+            _salvar_envio_log(sid, 'FALHA', num, str(ex)[:150])
+            return False
 
     def _salvar_envio_log(salon, status, num, detalhe):
         try:

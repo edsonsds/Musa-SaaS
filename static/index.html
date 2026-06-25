@@ -1901,7 +1901,18 @@ function agClick(e,col){
   _ctxH=(hh<10?'0':'')+hh+':'+(mm===0?'00':'30');
   _ctxPro=col.dataset.pro;_ctxData=agDate;
   var ctx=document.getElementById('ctx');
-  ctx.style.left=e.clientX+'px';ctx.style.top=e.clientY+'px';
+  var isMob = window.innerWidth <= 600;
+  if(isMob){
+    ctx.style.left = '50%';
+    ctx.style.top = '50%';
+    ctx.style.transform = 'translate(-50%,-50%)';
+    ctx.style.minWidth = '240px';
+  } else {
+    ctx.style.transform = '';
+    ctx.style.left=e.clientX+'px';
+    ctx.style.top=e.clientY+'px';
+    ctx.style.minWidth = '';
+  }
   ctx.classList.add('on');
   setTimeout(function(){document.addEventListener('click',function h(){ctx.classList.remove('on');document.removeEventListener('click',h);},{capture:true,once:true});},10);
 }
@@ -2126,13 +2137,15 @@ function salvarFichaInline(){
   });
 }
 
-function abrirFichaTecnica(){
-  var cliId = document.getElementById('ag-cli').value;
-  var cliNome = document.getElementById('ag-cli-s').value;
-  var agId = _agAtual ? _agAtual.id : 0;
+function abrirFichaTecnica(cliIdParam, cliNomeParam){
+  var cliId = cliIdParam || document.getElementById('ag-cli').value;
+  var cliNome = cliNomeParam || document.getElementById('ag-cli-s').value;
+  var agId = _agAtual ? _agAtual.id : (_agPopupData ? _agPopupData.id : 0);
   var svcNome = '';
   var svcEl = document.getElementById('ag-svc');
   if(svcEl && svcEl.options && svcEl.selectedIndex>=0) svcNome = svcEl.options[svcEl.selectedIndex].text || '';
+  if(!svcNome && _agPopupData) svcNome = _agPopupData.svc_nome || '';
+  if(!cliNome && _agPopupData) cliNome = _agPopupData.cli_nome || '';
   if(!cliId){ toast('Selecione a cliente primeiro','err'); return; }
 
   fetch('/api/ficha-tecnica/'+cliId).then(function(r){return r.json();}).then(function(registros){
@@ -5979,6 +5992,11 @@ function showAgPopup(e, ag) {
     + '<svg width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>'
     + '</button>';
 
+  // Ficha Técnica — cor roxa com ponto verde se tiver observações
+  html += '<button onclick="closeAgPopup();abrirFichaTecnica(' + ag.cli_id + ',\'' + (ag.cli_nome||'').replace(/'/g,'') + '\')" title="Ficha Técnica" id="popup-ficha-btn" style="width:30px;height:30px;border-radius:50%;border:1.5px solid #7c3aed;background:#f5f3ff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:13px;position:relative">🔬'
+    + '<span id="popup-ficha-dot" style="display:none;position:absolute;top:-2px;right:-2px;width:8px;height:8px;border-radius:50%;background:#10b981;border:1.5px solid white"></span>'
+    + '</button>';
+
   // Excluir — só mostra se NÃO for concluído
   if (ag.status !== 'concluido') {
     html += '<button onclick="delAgPopup(' + ag.id + ')" title="Excluir" style="width:30px;height:30px;border-radius:50%;border:1.5px solid var(--bdr2);background:white;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:.15s" onmouseover="this.style.background=\'var(--rl)\';this.style.borderColor=\'var(--r)\'" onmouseout="this.style.background=\'white\';this.style.borderColor=\'var(--bdr2)\'">'
@@ -6069,6 +6087,14 @@ function showAgPopup(e, ag) {
   document.body.appendChild(popup);
   _agPopup = popup;
   _agPopupData = ag;
+
+  // Verificar em background se há ficha técnica e acender o indicador verde
+  if(ag.cli_id){
+    fetch('/api/ficha-tecnica/'+ag.cli_id).then(function(r){return r.json();}).then(function(rows){
+      var dot = document.getElementById('popup-ficha-dot');
+      if(dot && rows && rows.length > 0) dot.style.display = 'block';
+    }).catch(function(){});
+  }
 
   // Mobile: centralizar na tela — touch não tem coordenadas confiáveis
   var isMobile = window.innerWidth <= 600;

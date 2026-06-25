@@ -3999,10 +3999,11 @@ def _enviar_email(destinatario, assunto, corpo):
         return False
 
 def _enviar_wpp(sid, numero, texto):
-    """Envia uma mensagem de WhatsApp via Evolution. Retorna True/False. Reutilizável."""
+    """Envia uma mensagem de WhatsApp via Evolution. Retorna True/False."""
     import urllib.request as _ur, urllib.error as _ue, json as _js
     conn = db_exec("SELECT * FROM wpp_conexoes WHERE salon_id=%s", (sid,), 'one')
     if not conn:
+        _log_wpp(sid, 'FALHA: sem conexao cadastrada para salon_id=' + str(sid))
         return False
     evo_url = db_exec("SELECT valor FROM sistema_global WHERE chave='evolution_url'", fetch='one')
     evo_key = db_exec("SELECT valor FROM sistema_global WHERE chave='evolution_apikey'", fetch='one')
@@ -4011,19 +4012,51 @@ def _enviar_wpp(sid, numero, texto):
     inst = conn['instance_name']
     num = ''.join(ch for ch in (numero or '') if ch.isdigit())
     if not num:
+        _log_wpp(sid, 'FALHA: numero invalido: ' + str(numero))
         return False
     if not num.startswith('55') and len(num) <= 11:
         num = '55' + num
+    erros = []
     for pl in [{'number': num, 'text': texto}, {'number': num, 'textMessage': {'text': texto}}]:
         try:
             req = _ur.Request(eurl + '/message/sendText/' + inst,
                               data=_js.dumps(pl).encode(),
                               headers={'Content-Type': 'application/json', 'apikey': ekey}, method='POST')
-            with _ur.urlopen(req, timeout=15):
-                return True
-        except Exception:
-            continue
+            with _ur.urlopen(req, timeout=15) as resp:
+                status = resp.status
+                body = resp.read().decode('utf-8', errors='ignore')[:300]
+                if status in (200, 201):
+                    _log_wpp(sid, 'OK ' + str(status) + ' num=' + num + ' resp=' + body)
+                    return True
+                else:
+                    erros.append('HTTP ' + str(status) + ': ' + body)
+        except _ue.HTTPError as he:
+            body = ''
+            try: body = he.read().decode('utf-8', errors='ignore')[:200]
+            except: pass
+            erros.append('HTTPError ' + str(he.code) + ': ' + body)
+        except Exception as ex:
+            erros.append('ERR: ' + str(ex)[:120])
+    _log_wpp(sid, 'FALHA num=' + num + ' | ' + ' | '.join(erros))
     return False
+
+def _log_wpp(sid, msg):
+    """Salva log do último envio WPP para diagnóstico."""
+    try:
+        import datetime as _dtl
+        txt = _dtl.datetime.utcnow().strftime('%H:%M:%S') + ' | ' + str(msg)[:400]
+        db_exec("""INSERT INTO sistema_global (chave, valor) VALUES ('last_wpp_send_'||%s, %s)
+                   ON CONFLICT (chave) DO UPDATE SET valor=EXCLUDED.valor""", (str(sid), txt))
+        db_commit()
+    except Exception:
+        pass
+
+@app.route('/api/wpp-ia/debug-ultimo-envio', methods=['GET'])
+def wpp_debug_ultimo_envio():
+    sid, err = require_salon()
+    if err: return err
+    row = db_exec("SELECT valor FROM sistema_global WHERE chave=%s", ('last_wpp_send_'+str(sid),), 'one')
+    return jsonify({'ultimo_envio': row['valor'] if row else 'nenhum registro ainda'})
 
 @app.route('/api/contato-auto/config', methods=['GET'])
 def contato_auto_get():

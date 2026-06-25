@@ -4277,6 +4277,78 @@ def _add_min(hhmm, mins):
     tot = h*60 + m + mins
     return '%02d:%02d' % ((tot//60) % 24, tot % 60)
 
+@app.route('/api/lembrete/diagnostico', methods=['GET'])
+def lembrete_diagnostico():
+    """Diagnóstico do lembrete de agendamento — mostra o que o sistema veria agora."""
+    sid, err = require_salon()
+    if err: return err
+    import datetime as _dt
+    agora = _dt.datetime.utcnow() - _dt.timedelta(hours=3)
+    hoje = agora.date().isoformat()
+    cfg = db_exec("SELECT * FROM contato_auto_config WHERE salon_id=%s AND tipo='lembrete'", (sid,), 'one')
+    janelas = []
+    if cfg:
+        cfg = dict(cfg)
+        if str(cfg.get('lemb_1dia','1')) == '1': janelas.append(('1dia', 24*60))
+        if str(cfg.get('lemb_2h','0'))   == '1': janelas.append(('2h', 120))
+        if str(cfg.get('lemb_1h','0'))   == '1': janelas.append(('1h', 60))
+    resultado = []
+    for rotulo, mins in janelas:
+        alvo = agora + _dt.timedelta(minutes=mins)
+        data_alvo = alvo.date().isoformat()
+        ags = db_exec("""SELECT a.id, a.h_ini, a.data, a.status, c.nome as cli_nome, c.tel as cli_tel, s.nome as svc_nome
+            FROM agendamentos a JOIN clientes c ON c.id=a.cli_id LEFT JOIN servicos s ON s.id=a.svc_id
+            WHERE a.salon_id=%s AND a.data=%s AND a.status NOT IN ('cancelado')
+            ORDER BY a.h_ini""", (sid, data_alvo), 'all')
+        elegíveis = []
+        for ag in (ags or []):
+            ag = dict(ag)
+            try:
+                hh, mm = int(ag['h_ini'].split(':')[0]), int(ag['h_ini'].split(':')[1])
+                dt_ag = _dt.datetime(alvo.year, alvo.month, alvo.day, hh, mm)
+                delta = (dt_ag - agora).total_seconds() / 60.0
+                na_janela = mins - 60 < delta <= mins
+                ja_enviado = bool(db_exec("SELECT id FROM lembrete_log WHERE ag_id=%s AND antecedencia=%s", (ag['id'], rotulo), 'one'))
+                elegíveis.append({
+                    'ag_id': ag['id'], 'cliente': ag['cli_nome'], 'tel': ag['cli_tel'],
+                    'horario': ag['h_ini'], 'servico': ag['svc_nome'], 'status': ag['status'],
+                    'delta_min': round(delta,1), 'na_janela': na_janela, 'ja_enviado': ja_enviado
+                })
+            except Exception as ex:
+                pass
+        resultado.append({'antecedencia': rotulo, 'alvo_hora': alvo.strftime('%H:%M'), 'agendamentos': elegíveis})
+    return jsonify({
+        'agora_brasilia': agora.strftime('%Y-%m-%d %H:%M'),
+        'lembrete_ativo': bool(cfg and cfg.get('ativo')),
+        'lemb_2h_ativo': bool(cfg and str(cfg.get('lemb_2h','0')) == '1'),
+        'janelas': resultado
+    })
+
+@app.route('/api/lembrete/teste-envio', methods=['POST'])
+def lembrete_teste_envio():
+    """Envia mensagem de teste para um número específico."""
+    sid, err = require_salon()
+    if err: return err
+    d = request.json or {}
+    numero = (d.get('numero') or '').strip()
+    antecedencia = d.get('antecedencia', '2h')
+    if not numero:
+        return jsonify({'ok': False, 'erro': 'Informe o número'})
+    salao = db_exec("SELECT nome FROM saloes WHERE id=%s", (sid,), 'one')
+    nome_salao = salao['nome'] if salao else 'nosso salão'
+    cfg = db_exec("SELECT * FROM contato_auto_config WHERE salon_id=%s AND tipo='lembrete'", (sid,), 'one')
+    palavra = (dict(cfg).get('confirma_palavra') or '1').strip() if cfg else '1'
+    quando = 'amanhã' if antecedencia == '1dia' else ('em 2 horas' if antecedencia == '2h' else 'em 1 hora')
+    import datetime as _dt
+    agora = _dt.datetime.utcnow() - _dt.timedelta(hours=3)
+    hora_exemplo = (agora + _dt.timedelta(hours=2)).strftime('%H:%M')
+    msg = ('Oi! 💕 [MENSAGEM DE TESTE] Passando para lembrar do seu horário ' + quando +
+           ' às ' + hora_exemplo + ' no ' + nome_salao + '.\n\nResponda *' + palavra +
+           '* para confirmar sua presença! 😊\n\n_(Esta é uma mensagem de teste)_')
+    ok = _enviar_wpp(sid, numero, msg)
+    return jsonify({'ok': ok, 'numero': numero, 'mensagem': msg,
+                    'erro': None if ok else 'Falha no envio — verifique se o WhatsApp está conectado'})
+
 @app.route('/api/lembrete/disparar', methods=['POST', 'GET'])
 def lembrete_disparar():
     """Dispara lembretes de agendamento na antecedência configurada. Chamado pelo cron OU botão."""
@@ -4319,7 +4391,7 @@ def lembrete_disparar():
                              FROM agendamentos a JOIN clientes c ON c.id=a.cli_id
                              LEFT JOIN servicos s2 ON s2.id=a.svc_id
                              WHERE a.salon_id=%s AND a.data=%s
-                               AND a.status NOT IN ('cancelado','confirmado')""",
+                               AND a.status NOT IN ('cancelado','concluido')""",
                           (s, data_alvo), 'all')
             for ag in (ags or []):
                 ag = dict(ag)

@@ -4257,7 +4257,17 @@ def lembrete_disparar():
         sids = [sid]
         forcar = True
 
-    agora = _dt.datetime.utcnow() - _dt.timedelta(hours=3)  # Brasília
+    agora = _dt.datetime.utcnow() - _dt.timedelta(hours=3)
+
+    # Sempre em thread — evita timeout do Gunicorn e permite pausa humanizada
+    import threading as _th
+    _th.Thread(target=_exec_lembrete_ag, args=(sids, agora, forcar), daemon=True).start()
+    return jsonify({'ok': True, 'total_enviado': 0})
+
+
+def _exec_lembrete_ag(sids, agora, forcar):
+    """Executa lembretes de agendamento com pausa humanizada entre envios."""
+    import datetime as _dt, time as _t, random as _r
     total = 0
     for s in sids:
         cfg = db_exec("SELECT * FROM contato_auto_config WHERE salon_id=%s AND tipo='lembrete'", (s,), 'one')
@@ -4266,16 +4276,13 @@ def lembrete_disparar():
         cfg = dict(cfg)
         if not forcar and not cfg.get('ativo'):
             continue
-        cfg_ia = db_exec("SELECT * FROM wpp_ia_config WHERE salon_id=%s", (s,), 'one')
         palavra = (cfg.get('confirma_palavra') or '1').strip()
-        # Antecedências ativas: (rótulo, minutos antes)
         janelas = []
         if str(cfg.get('lemb_1dia','1')) == '1': janelas.append(('1dia', 24*60))
         if str(cfg.get('lemb_2h','0'))  == '1': janelas.append(('2h', 120))
         if str(cfg.get('lemb_1h','0'))  == '1': janelas.append(('1h', 60))
         for rotulo, mins_antes in janelas:
             alvo = agora + _dt.timedelta(minutes=mins_antes)
-            # Agendamentos no dia/hora alvo (janela de 60 min para o cron de hora em hora)
             data_alvo = alvo.date().isoformat()
             ags = db_exec("""SELECT a.id, a.cli_id, a.h_ini, a.data, c.nome as cli_nome, c.tel as cli_tel,
                                     s2.nome as svc_nome
@@ -4288,22 +4295,17 @@ def lembrete_disparar():
                 ag = dict(ag)
                 if not ag.get('cli_tel') or not ag.get('h_ini'):
                     continue
-                # Hora do agendamento
                 try:
                     hh, mm = int(ag['h_ini'].split(':')[0]), int(ag['h_ini'].split(':')[1])
                     dt_ag = _dt.datetime(alvo.year, alvo.month, alvo.day, hh, mm)
                 except Exception:
                     continue
-                # Está dentro da janela de envio? (entre mins_antes e mins_antes-60)
                 delta_min = (dt_ag - agora).total_seconds() / 60.0
                 if not (mins_antes - 60 < delta_min <= mins_antes):
                     continue
-                # Já enviou esse lembrete para esse agendamento?
                 ja = db_exec("SELECT id FROM lembrete_log WHERE ag_id=%s AND antecedencia=%s", (ag['id'], rotulo), 'one')
                 if ja:
                     continue
-                # ANTI-DUPLICATA: se a cliente já recebeu lembrete DESTA antecedência
-                # para QUALQUER agendamento neste mesmo dia, não manda de novo.
                 ja_dia = db_exec("""SELECT ll.id FROM lembrete_log ll
                     JOIN agendamentos ag3 ON ag3.id=ll.ag_id
                     WHERE ag3.salon_id=%s AND ag3.cli_id=%s AND ag3.data=%s AND ll.antecedencia=%s
@@ -4313,7 +4315,6 @@ def lembrete_disparar():
                             (s, ag['id'], rotulo))
                     db_commit()
                     continue
-                # Montar mensagem
                 primeiro = (ag.get('cli_nome','') or '').split(' ')[0]
                 quando = 'amanhã' if rotulo=='1dia' else ('em 2 horas' if rotulo=='2h' else 'em 1 hora')
                 base = cfg.get('msg_fixa') or ''
@@ -4330,7 +4331,9 @@ def lembrete_disparar():
                             (s, ag['id'], rotulo))
                     db_commit()
                     total += 1
-    return jsonify({'ok': True, 'total_enviado': total})
+                    # Pausa humanizada entre 8 e 20 segundos
+                    _t.sleep(_r.uniform(8, 20))
+    return total
 
 # ─── WEBHOOK Evolution API ────────────────────────────────────────────────────
 def _horarios_livres(sid, pro_id, data_iso, dur_min=60, abertura='09:00', fechamento='19:00'):

@@ -3930,7 +3930,7 @@ def diagnostico_geral():
     e o que foi enviado nos últimos dias — para confirmar a origem de qualquer mensagem indevida."""
     sid, err = require_salon()
     if err: return err
-    BACKEND_VERSION = 128
+    BACKEND_VERSION = 154
     cfgs = db_exec("SELECT tipo, ativo, horario, dias_semana, dias_inativo, ultimo_envio FROM contato_auto_config WHERE salon_id=%s", (sid,), 'all')
     envios = db_exec("""SELECT tipo, COUNT(*) as n, MAX(enviado_em) as ultimo
         FROM contato_auto_log WHERE salon_id=%s AND enviado_em > NOW() - INTERVAL '3 days'

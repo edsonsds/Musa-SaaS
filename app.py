@@ -4184,10 +4184,61 @@ def lembrete_teste_envio():
     msg = ('Oi! 💕 [TESTE] Passando para lembrar do seu horário em 2 horas '
            'às ' + hora_exemplo + ' no ' + nome_salao + '.\n\n'
            'Responda *' + palavra + '* para confirmar sua presença! 😊\n\n'
-           '_(Esta é uma mensagem de teste — não é um agendamento real)_')
-    ok = _enviar_wpp(sid, numero, msg)
-    return jsonify({'ok': ok, 'numero': numero, 'mensagem': msg,
-                    'erro': None if ok else 'Falha no envio — verifique se o WhatsApp está conectado'})
+           '_(Esta é uma mensagem de teste)_')
+
+    # Verificar conexão antes de enviar
+    conn = db_exec("SELECT * FROM wpp_conexoes WHERE salon_id=%s", (sid,), 'one')
+    if not conn:
+        return jsonify({'ok': False, 'erro': 'WhatsApp não configurado. Configure na tela WhatsApp IA.'})
+
+    evo_url = db_exec("SELECT valor FROM sistema_global WHERE chave='evolution_url'", fetch='one')
+    evo_key = db_exec("SELECT valor FROM sistema_global WHERE chave='evolution_apikey'", fetch='one')
+    import urllib.request as _ur, urllib.error as _ue, json as _js
+    eurl = (evo_url['valor'] if evo_url else conn['evolution_url']).rstrip('/')
+    ekey = evo_key['valor'] if evo_key else conn['instance_key']
+    inst = conn['instance_name']
+
+    num = ''.join(ch for ch in numero if ch.isdigit())
+    if not num.startswith('55') and len(num) <= 11:
+        num = '55' + num
+
+    detalhe = ''
+    ok = False
+    try:
+        payload = {'number': num, 'text': msg}
+        req = _ur.Request(eurl + '/message/sendText/' + inst,
+                          data=_js.dumps(payload).encode(),
+                          headers={'Content-Type': 'application/json', 'apikey': ekey}, method='POST')
+        with _ur.urlopen(req, timeout=15) as resp:
+            status = resp.status
+            body = resp.read().decode('utf-8', errors='ignore')[:300]
+            ok = status in (200, 201)
+            detalhe = 'HTTP ' + str(status) + ' — ' + body
+    except _ue.HTTPError as he:
+        body = ''
+        try: body = he.read().decode('utf-8', errors='ignore')[:300]
+        except: pass
+        detalhe = 'HTTP ' + str(he.code) + ': ' + body
+    except Exception as ex:
+        detalhe = str(ex)
+
+    # Salvar log atualizado
+    try:
+        db_exec("""INSERT INTO sistema_global (chave, valor) VALUES ('last_send_'||%s, %s)
+                   ON CONFLICT (chave) DO UPDATE SET valor=EXCLUDED.valor""",
+                (str(sid), ('OK' if ok else 'FALHA') + ' | num=' + num + ' | ' + detalhe[:300]))
+        db_commit()
+    except Exception: pass
+
+    return jsonify({
+        'ok': ok,
+        'numero': num,
+        'instancia': inst,
+        'evolution_url': eurl,
+        'mensagem': msg,
+        'detalhe': detalhe,
+        'erro': None if ok else detalhe
+    })
 
 @app.route('/api/lembrete/disparar', methods=['POST', 'GET'])
 def lembrete_disparar():

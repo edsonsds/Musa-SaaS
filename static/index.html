@@ -1345,7 +1345,10 @@ function carregarAgendaProfissional(periodo){
                 '<div style="font-size:15px;font-weight:600;margin-top:4px">'+ (a.cliente||'Cliente') +'</div>'+
                 '<div style="font-size:13px;color:#6b7280;margin-top:2px">'+ (a.servico||'Serviço') +'</div>'+
               '</div>'+
-              '<div style="font-size:11px;font-weight:700;color:'+statusCor+';padding:4px 8px;background:'+statusCor+'15;border-radius:6px;white-space:nowrap">'+ statusLbl +'</div>'+
+              '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">'+
+                '<div style="font-size:11px;font-weight:700;color:'+statusCor+';padding:4px 8px;background:'+statusCor+'15;border-radius:6px;white-space:nowrap">'+ statusLbl +'</div>'+
+                (a.cli_id ? '<button onclick="abrirFichaProf('+a.cli_id+',\''+(a.cliente||'').replace(/\'/g,'')+'\','+a.id+',\''+(a.servico||'').replace(/\'/g,'')+'\')" style="font-size:11px;font-weight:700;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:4px 8px;cursor:pointer;white-space:nowrap">🔬 Ficha</button>' : '') +
+              '</div>'+
             '</div>'+
           '</div>';
       });
@@ -1354,6 +1357,66 @@ function carregarAgendaProfissional(periodo){
     .catch(function(){
       document.getElementById('ag-pro-lista').innerHTML = '<div style="text-align:center;padding:30px;color:#ef4444">Erro ao carregar agenda</div>';
     });
+}
+
+function abrirFichaProf(cliId, cliNome, agId, svcNome){
+  fetch('/api/ficha-tecnica/'+cliId).then(function(r){return r.json();}).then(function(registros){
+    var h='';
+    h+='<div style="margin-bottom:16px">';
+    h+='<textarea id="fp-nova-obs" rows="3" placeholder="Ex: Coloração 7.1 + 5g ox 20vol, 35min, tom acobreado..." style="width:100%;resize:vertical;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;font-family:inherit"></textarea>';
+    h+='<button onclick="salvarFichaProf('+cliId+','+agId+',\''+(svcNome||'').replace(/\'/g,'')+'\')" style="width:100%;margin-top:8px;padding:10px;background:#7c3aed;color:white;border:none;border-radius:10px;font-weight:700;cursor:pointer">💾 Salvar observação</button>';
+    h+='</div>';
+    if(!registros.length){
+      h+='<div style="text-align:center;padding:20px;color:#9ca3af"><div style="font-size:36px;margin-bottom:8px">📋</div><p style="font-size:13px">Nenhuma observação registrada ainda.</p></div>';
+    } else {
+      h+='<div style="font-weight:700;font-size:13px;color:#374151;margin-bottom:10px">📋 Histórico ('+registros.length+' registros)</div>';
+      registros.forEach(function(r){
+        var dt=r.criado_em?new Date(r.criado_em).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'}):'';
+        h+='<div style="border:1px solid #e5e7eb;border-radius:12px;padding:12px 14px;margin-bottom:10px;background:white">';
+        if(r.svc_nome) h+='<div style="font-size:11px;font-weight:700;color:#7c3aed;text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">'+r.svc_nome+'</div>';
+        h+='<div style="font-size:13px;color:#1f2937;line-height:1.5;white-space:pre-wrap">'+r.obs+'</div>';
+        h+='<div style="font-size:11px;color:#9ca3af;margin-top:6px">'+(r.pro_nome||'')+(dt?' · '+dt:'')+'</div>';
+        h+='</div>';
+      });
+    }
+    var overlay = document.createElement('div');
+    overlay.id = 'fp-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:flex-end;justify-content:center';
+    overlay.onclick = function(e){ if(e.target===overlay) fecharFichaProf(); };
+    overlay.innerHTML =
+      '<div style="background:white;border-radius:20px 20px 0 0;max-width:480px;width:100%;max-height:88vh;display:flex;flex-direction:column;animation:sheetIn .25s ease">'+
+        '<div style="width:40px;height:4px;background:#e5e7eb;border-radius:2px;margin:12px auto 0"></div>'+
+        '<div style="padding:16px 20px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #f3f4f6">'+
+          '<div style="font-weight:800;font-size:16px">🔬 Ficha Técnica — '+(cliNome||'Cliente')+'</div>'+
+          '<button onclick="fecharFichaProf()" style="width:28px;height:28px;border-radius:50%;border:1.5px solid #e5e7eb;background:white;cursor:pointer;font-size:16px">×</button>'+
+        '</div>'+
+        '<div style="padding:16px 20px;overflow-y:auto">'+h+'</div>'+
+      '</div>';
+    document.body.appendChild(overlay);
+  }).catch(function(){ alert('Erro ao carregar ficha técnica'); });
+}
+
+function fecharFichaProf(){
+  var ov = document.getElementById('fp-overlay');
+  if(ov) ov.remove();
+}
+
+function salvarFichaProf(cliId, agId, svcNome){
+  var obs = (document.getElementById('fp-nova-obs').value||'').trim();
+  if(!obs){ alert('Digite a observação antes de salvar'); return; }
+  fetch('/api/ficha-tecnica/'+cliId,{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({obs:obs, ag_id:agId, svc_nome:svcNome})
+  }).then(function(r){return r.json();}).then(function(d){
+    if(d.ok){
+      fecharFichaProf();
+      var cliNomeEl = document.querySelector('[onclick*="abrirFichaProf('+cliId+'"]');
+      var cliNome = '';
+      try{ cliNome = cliNomeEl.getAttribute('onclick').match(/,'([^']*)',/)[1]; }catch(e){}
+      setTimeout(function(){ abrirFichaProf(cliId, cliNome, agId, svcNome); }, 200);
+    } else {
+      alert(d.erro || 'Erro ao salvar');
+    }
+  }).catch(function(){ alert('Erro de conexão'); });
 }
 
 // Renderiza tela de Minha Comissão

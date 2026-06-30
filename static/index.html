@@ -1311,9 +1311,13 @@ function trocarPeriodoPro(p){
 }
 
 function carregarAgendaProfissional(periodo){
-  fetch('/api/profissional/minha-agenda?periodo=' + periodo + '&_=' + Date.now(), {cache:'no-store'})
-    .then(function(r){ return r.json(); })
-    .then(function(d){
+  Promise.all([
+    fetch('/api/profissional/minha-agenda?periodo=' + periodo + '&_=' + Date.now(), {cache:'no-store'}).then(function(r){return r.json();}),
+    fetch('/api/ficha-tecnica/existentes').then(function(r){return r.json();}).catch(function(){return [];})
+  ])
+    .then(function(results){
+      var d = results[0];
+      window._fichaExistentes = results[1] || [];
       var box = document.getElementById('ag-pro-lista');
       var dataLbl = document.getElementById('ag-pro-data-lbl');
       if(dataLbl && d.data_ini){
@@ -1347,7 +1351,7 @@ function carregarAgendaProfissional(periodo){
               '</div>'+
               '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">'+
                 '<div style="font-size:11px;font-weight:700;color:'+statusCor+';padding:4px 8px;background:'+statusCor+'15;border-radius:6px;white-space:nowrap">'+ statusLbl +'</div>'+
-                (a.cli_id ? '<button onclick="abrirFichaProf('+a.cli_id+',\''+(a.cliente||'').replace(/\'/g,'')+'\','+a.id+',\''+(a.servico||'').replace(/\'/g,'')+'\')" style="font-size:11px;font-weight:700;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:4px 8px;cursor:pointer;white-space:nowrap">🔬 Ficha</button>' : '') +
+                (a.cli_id ? '<button onclick="abrirFichaProf('+a.cli_id+',\''+(a.cliente||'').replace(/\'/g,'')+'\','+a.id+',\''+(a.servico||'').replace(/\'/g,'')+'\')" style="position:relative;font-size:11px;font-weight:700;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:4px 10px 4px 8px;cursor:pointer;white-space:nowrap">🔬 Ficha'+(window._fichaExistentes&&window._fichaExistentes.indexOf(a.cli_id)!==-1?'<span style="position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:#10b981;border:1.5px solid white"></span>':'')+'</button>' : '') +
               '</div>'+
             '</div>'+
           '</div>';
@@ -1409,6 +1413,16 @@ function salvarFichaProf(cliId, agId, svcNome){
   }).then(function(r){return r.json();}).then(function(d){
     if(d.ok){
       fecharFichaProf();
+      // Marca essa cliente como tendo ficha + acende o ponto verde no botão sem recarregar a agenda inteira
+      if(!window._fichaExistentes) window._fichaExistentes = [];
+      if(window._fichaExistentes.indexOf(cliId) === -1) window._fichaExistentes.push(cliId);
+      document.querySelectorAll('[onclick*="abrirFichaProf('+cliId+'"]').forEach(function(btn){
+        if(!btn.querySelector('span')){
+          var dot = document.createElement('span');
+          dot.style.cssText = 'position:absolute;top:-3px;right:-3px;width:9px;height:9px;border-radius:50%;background:#10b981;border:1.5px solid white';
+          btn.appendChild(dot);
+        }
+      });
       var cliNomeEl = document.querySelector('[onclick*="abrirFichaProf('+cliId+'"]');
       var cliNome = '';
       try{ cliNome = cliNomeEl.getAttribute('onclick').match(/,'([^']*)',/)[1]; }catch(e){}

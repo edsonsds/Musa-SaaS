@@ -1255,7 +1255,7 @@ function abrirSistema(nome, perfil, permissoes, salonNome){
   // ─── ADMIN/Recepcionista: visão completa ───────────────────────────────
   buildMenu();
   loadGlobals();
-  var primeira='dashboard';
+  var primeira='agenda';
   if(perfil!=='admin' && permissoes && permissoes.length && permissoes.indexOf('dashboard')===-1){
     var ordem=['agenda','clientes','caixa','faturamento','comandas'];
     for(var i=0;i<ordem.length;i++){

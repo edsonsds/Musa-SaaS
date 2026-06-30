@@ -1299,7 +1299,7 @@ def minha_agenda():
         fim = prox_mes - datetime.timedelta(days=1)
     else:
         ini = fim = hoje
-    rows = db_exec("""SELECT a.id,a.data,a.h_ini,a.h_fim,a.status,c.nome as cliente,s.nome as servico
+    rows = db_exec("""SELECT a.id,a.data,a.h_ini,a.h_fim,a.status,a.cli_id,c.nome as cliente,s.nome as servico
         FROM agendamentos a LEFT JOIN clientes c ON c.id=a.cli_id LEFT JOIN servicos s ON s.id=a.svc_id
         WHERE a.salon_id=%s AND a.pro_id=%s AND a.data BETWEEN %s AND %s AND a.status!='cancelado'
         ORDER BY a.data,a.h_ini""", (sid,pro_id,ini.isoformat(),fim.isoformat()), 'all')

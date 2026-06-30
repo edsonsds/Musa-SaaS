@@ -3000,6 +3000,79 @@ function loadCmdas(){
 // ════ COMISSÕES ════
 /* pgComs v2 abaixo */
 /* loadComs v2 abaixo */
+function abrirPagamentoComissao(){
+  var ids = window._pagLoteIds || [];
+  if(!ids.length){ toast('Nenhuma comissão pendente','err'); return; }
+  var ini = document.getElementById('co-i').value;
+  var fim = document.getElementById('co-f').value;
+  // Buscar adiantamentos pendentes no período para cruzar com as comissões
+  Promise.all([
+    fetch('/api/comissoes?ini='+ini+'&fim='+fim).then(function(r){return r.json();}),
+    fetch('/api/despesas?ini='+ini+'&fim='+fim).then(function(r){return r.json();})
+  ]).then(function(results){
+    var coms = results[0] || [];
+    var despesas = results[1] || [];
+    // Adiantamentos reconhecidos no período por profissional
+    var adtoPorPro = {};
+    despesas.forEach(function(d){
+      if(d.eh_adiantamento && d.status_reconhecimento === 'reconhecido' && d.pro_id){
+        if(!adtoPorPro[d.pro_id]) adtoPorPro[d.pro_id] = {total:0, lista:[]};
+        adtoPorPro[d.pro_id].total += parseFloat(d.valor||0);
+        adtoPorPro[d.pro_id].lista.push(d);
+      }
+    });
+    // Agrupar comissões pendentes por profissional
+    var porPro = {};
+    coms.filter(function(c){return !c.pago && ids.indexOf(c.id)!==-1;}).forEach(function(c){
+      var pid = c.pro_id;
+      if(!porPro[pid]) porPro[pid] = {nome:c.pro_nome||'?', ids:[], bruto:0};
+      porPro[pid].ids.push(c.id);
+      porPro[pid].bruto += parseFloat(c.valor||0);
+    });
+    var h = '';
+    h += '<div style="font-size:13px;color:var(--ink3);margin-bottom:14px">Período: <b>'+fmtD(ini)+'</b> até <b>'+fmtD(fim)+'</b></div>';
+    var totalGeral = 0, adtoGeral = 0;
+    Object.keys(porPro).forEach(function(pid){
+      var p = porPro[pid];
+      var adto = adtoPorPro[pid] ? adtoPorPro[pid].total : 0;
+      var liquido = Math.max(0, p.bruto - adto);
+      totalGeral += p.bruto; adtoGeral += adto;
+      h += '<div style="border:1px solid var(--bdr);border-radius:12px;padding:14px;margin-bottom:10px">';
+      h += '<div style="font-weight:700;font-size:14px;margin-bottom:10px">👤 '+p.nome+'</div>';
+      h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+      h += '<div style="background:var(--bg2);border-radius:8px;padding:10px;text-align:center">';
+      h += '<div style="font-size:11px;color:var(--ink3)">Comissão bruta</div>';
+      h += '<div style="font-size:18px;font-weight:800;color:var(--ink)">'+fmt(p.bruto)+'</div></div>';
+      if(adto > 0){
+        h += '<div style="background:#fef2f2;border-radius:8px;padding:10px;text-align:center">';
+        h += '<div style="font-size:11px;color:#991b1b">(−) Adiantamentos</div>';
+        h += '<div style="font-size:18px;font-weight:800;color:#dc2626">'+fmt(adto)+'</div></div>';
+      }
+      h += '</div>';
+      if(adto > 0){
+        h += '<div style="background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:10px;margin-top:8px;display:flex;justify-content:space-between;align-items:center">';
+        h += '<div style="font-size:12px;font-weight:700;color:#166534">Líquido a pagar</div>';
+        h += '<div style="font-size:20px;font-weight:800;color:#16a34a">'+fmt(liquido)+'</div></div>';
+      }
+      h += '</div>';
+    });
+    // Total geral
+    h += '<div style="border-top:2px solid var(--bdr);padding-top:12px;margin-top:4px">';
+    h += '<div style="display:flex;justify-content:space-between;font-weight:700;font-size:14px">';
+    h += '<span>Total a pagar</span><span style="color:#16a34a">'+fmt(Math.max(0,totalGeral-adtoGeral))+'</span></div>';
+    if(adtoGeral>0) h += '<div style="font-size:11px;color:var(--ink3);margin-top:4px">Bruto: '+fmt(totalGeral)+' − Adiantamentos: '+fmt(adtoGeral)+'</div>';
+    h += '</div>';
+    openG('💰 Confirmar Pagamento de Comissões', h,
+      '<button class="btn btn-ghost" onclick="closeM(\'m-gen\')">Cancelar</button>'+
+      '<button class="btn btn-g" onclick="confirmarPagamentoComissao('+JSON.stringify(ids)+')">✓ Confirmar e Pagar</button>', 500);
+  }).catch(function(){ toast('Erro ao carregar dados','err'); });
+}
+
+function confirmarPagamentoComissao(ids){
+  closeM('m-gen');
+  pagLote(ids);
+}
+
 function pagCom(id){fetch('/api/comissoes/'+id+'/pagar',{method:'POST'}).then(function(){toast('Pago!','ok');loadComs();});}
 function pagLote(ids){fetch('/api/comissoes/pagar-lote',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids:ids})}).then(function(){toast('Comissões pagas!','ok');loadComs();});}
 
@@ -4378,9 +4451,8 @@ function loadComs() {
       if (pends.length) {
         window._pagLoteIds = pends.map(function(c) { return c.id; });
         h += '<div class="mb4 flex gap2">'
-          + '<button class="btn btn-g btn-sm" onclick="pagLote(window._pagLoteIds)">&#10003; Pagar todas pendentes (' + pends.length + ')</button>'
+          + '<button class="btn btn-g btn-sm" onclick="abrirPagamentoComissao()">💰 Pagar comissões pendentes ('+pends.length+')</button>'
           + (pro ? '<button class="btn btn-soft btn-sm" onclick="abrirResumo('+pro+')">&#128269; Resumo</button>' : '');
-
         h += '</div>';
       }
       h += '<div class="card"><div class="tw"><table><thead><tr>'

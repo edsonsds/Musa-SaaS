@@ -1956,6 +1956,15 @@ def agendamentos():
             return jsonify({'ok': False, 'erro': 'Esse horário está bloqueado: ' + (bloq.get('motivo') or 'indisponível') + '. Escolha outro horário.'}), 409
     except Exception:
         pass
+    # Anti-duplicata: bloqueia agendamento idêntico criado nos últimos 10 segundos
+    # (protege contra duplo-clique / duplo-envio do frontend)
+    dup = db_exec("""SELECT id FROM agendamentos
+        WHERE salon_id=%s AND cli_id=%s AND pro_id=%s AND svc_id=%s AND data=%s AND h_ini=%s
+          AND criado_em > NOW() - INTERVAL '10 seconds'
+        LIMIT 1""",
+        (sid, d['cli_id'], d['pro_id'], d['svc_id'], d['data'], d['h_ini']), 'one')
+    if dup:
+        return jsonify({'ok': True, 'id': dup['id'], 'duplicado_ignorado': True})
     cur = db_exec("INSERT INTO agendamentos (salon_id,cli_id,pro_id,svc_id,data,h_ini,h_fim,preco,status,obs) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id",
                   (sid,d['cli_id'],d['pro_id'],d['svc_id'],d['data'],d['h_ini'],d['h_fim'],d.get('preco',0),d.get('status','agendado'),d.get('obs','')), 'one')
     if d.get('cli_id'):

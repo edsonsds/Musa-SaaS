@@ -716,6 +716,29 @@ def init_db():
     CREATE INDEX IF NOT EXISTS idx_wpp_conv ON wpp_conversas(salon_id, numero_cliente, criado_em)
     """)
 
+    # CRM: controle por conversa (IA ligada/desligada, não-lida, tags)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS crm_conversas (
+        id SERIAL PRIMARY KEY,
+        salon_id INTEGER NOT NULL,
+        conv_key TEXT NOT NULL,
+        numero_cliente TEXT DEFAULT '',
+        nome_cliente TEXT DEFAULT '',
+        ia_ativa INTEGER DEFAULT 1,
+        nao_lidas INTEGER DEFAULT 0,
+        ultima_msg TEXT DEFAULT '',
+        ultima_em TIMESTAMP DEFAULT NOW(),
+        tags TEXT DEFAULT '',
+        UNIQUE(salon_id, conv_key)
+    )""")
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS crm_tags (
+        id SERIAL PRIMARY KEY,
+        salon_id INTEGER NOT NULL,
+        nome TEXT NOT NULL,
+        cor TEXT DEFAULT '#7c3aed'
+    )""")
+
     indices = [
         "CREATE INDEX IF NOT EXISTS idx_ag_salon_data ON agendamentos(salon_id, data)",
         "CREATE INDEX IF NOT EXISTS idx_ag_salon_status ON agendamentos(salon_id, status)",
@@ -4641,6 +4664,118 @@ def programados_cancelar_tudo():
     return jsonify({'ok': True, 'msg': 'Todos os envios programados foram cancelados.'})
 
 
+# ─── CRM WHATSAPP ─────────────────────────────────────────────────────────────
+
+@app.route('/api/crm/conversas', methods=['GET'])
+def crm_conversas():
+    """Lista todas as conversas ordenadas pela mais recente."""
+    sid, err = require_salon()
+    if err: return err
+    rows = db_exec("""
+        SELECT c.*,
+          (SELECT cl.id FROM clientes cl WHERE cl.salon_id=c.salon_id
+             AND regexp_replace(cl.tel,'[^0-9]','','g') LIKE '%%'||c.conv_key LIMIT 1) as cli_id
+        FROM crm_conversas c
+        WHERE c.salon_id=%s
+        ORDER BY c.ultima_em DESC
+        LIMIT 200
+    """, (sid,), 'all')
+    return jsonify([dict(r) for r in (rows or [])])
+
+@app.route('/api/crm/conversa/<conv_key>/mensagens', methods=['GET'])
+def crm_mensagens(conv_key):
+    """Retorna todas as mensagens de uma conversa e zera não-lidas."""
+    sid, err = require_salon()
+    if err: return err
+    msgs = db_exec("""SELECT role, content, criado_em FROM wpp_conversas
+        WHERE salon_id=%s AND RIGHT(regexp_replace(numero_cliente,'[^0-9]','','g'), 8)=%s
+        ORDER BY criado_em ASC LIMIT 500""", (sid, conv_key[-8:]), 'all')
+    db_exec("UPDATE crm_conversas SET nao_lidas=0 WHERE salon_id=%s AND conv_key=%s", (sid, conv_key))
+    db_commit()
+    crm = db_exec("SELECT ia_ativa FROM crm_conversas WHERE salon_id=%s AND conv_key=%s", (sid, conv_key), 'one')
+    # Dados do cliente + agendamentos
+    cli = db_exec("""SELECT * FROM clientes WHERE salon_id=%s AND
+        regexp_replace(tel,'[^0-9]','','g') LIKE %s LIMIT 1""", (sid, '%'+conv_key[-8:]), 'one')
+    ags = []
+    if cli:
+        ags = db_exec("""SELECT a.data,a.h_ini,a.status,s.nome as svc,p.nome as pro
+            FROM agendamentos a LEFT JOIN servicos s ON s.id=a.svc_id
+            LEFT JOIN profissionais p ON p.id=a.pro_id
+            WHERE a.salon_id=%s AND a.cli_id=%s ORDER BY a.data DESC LIMIT 10""",
+            (sid, cli['id']), 'all')
+    return jsonify({
+        'mensagens': [dict(m) for m in (msgs or [])],
+        'cliente': dict(cli) if cli else None,
+        'agendamentos': [dict(a) for a in (ags or [])],
+        'ia_ativa': crm['ia_ativa'] if crm else 1
+    })
+
+@app.route('/api/crm/conversa/<conv_key>/enviar', methods=['POST'])
+def crm_enviar(conv_key):
+    """Envia mensagem manual e registra na conversa."""
+    sid, err = require_salon()
+    if err: return err
+    d = request.json or {}
+    texto = (d.get('texto') or '').strip()
+    if not texto:
+        return jsonify({'ok': False, 'erro': 'Mensagem vazia'})
+    conv = db_exec("SELECT numero_cliente FROM crm_conversas WHERE salon_id=%s AND conv_key=%s", (sid, conv_key), 'one')
+    numero = conv['numero_cliente'] if conv else conv_key
+    ok = _enviar_wpp(sid, numero, texto)
+    if ok:
+        db_exec("INSERT INTO wpp_conversas (salon_id,numero_cliente,role,content) VALUES (%s,%s,'assistant',%s)",
+                (sid, numero, texto))
+        db_exec("""UPDATE crm_conversas SET ultima_msg=%s, ultima_em=NOW()
+                   WHERE salon_id=%s AND conv_key=%s""", (texto[:100], sid, conv_key))
+        db_commit()
+    return jsonify({'ok': ok})
+
+@app.route('/api/crm/conversa/<conv_key>/ia', methods=['POST'])
+def crm_toggle_ia(conv_key):
+    """Liga/desliga a IA para uma conversa específica."""
+    sid, err = require_salon()
+    if err: return err
+    d = request.json or {}
+    ativa = 1 if d.get('ativa') else 0
+    db_exec("""INSERT INTO crm_conversas (salon_id, conv_key, ia_ativa) VALUES (%s,%s,%s)
+               ON CONFLICT (salon_id, conv_key) DO UPDATE SET ia_ativa=%s""",
+            (sid, conv_key, ativa, ativa))
+    db_commit()
+    return jsonify({'ok': True, 'ia_ativa': ativa})
+
+@app.route('/api/crm/conversa/<conv_key>/tags', methods=['POST'])
+def crm_set_tags(conv_key):
+    sid, err = require_salon()
+    if err: return err
+    d = request.json or {}
+    tags = d.get('tags', '')
+    db_exec("""INSERT INTO crm_conversas (salon_id, conv_key, tags) VALUES (%s,%s,%s)
+               ON CONFLICT (salon_id, conv_key) DO UPDATE SET tags=%s""",
+            (sid, conv_key, tags, tags))
+    db_commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/crm/tags', methods=['GET','POST'])
+def crm_tags():
+    sid, err = require_salon()
+    if err: return err
+    if request.method == 'GET':
+        rows = db_exec("SELECT * FROM crm_tags WHERE salon_id=%s ORDER BY nome", (sid,), 'all')
+        return jsonify([dict(r) for r in (rows or [])])
+    d = request.json or {}
+    db_exec("INSERT INTO crm_tags (salon_id,nome,cor) VALUES (%s,%s,%s)",
+            (sid, d.get('nome',''), d.get('cor','#7c3aed')))
+    db_commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/crm/tags/<int:tid>', methods=['DELETE'])
+def crm_tag_del(tid):
+    sid, err = require_salon()
+    if err: return err
+    db_exec("DELETE FROM crm_tags WHERE id=%s AND salon_id=%s", (tid, sid))
+    db_commit()
+    return jsonify({'ok': True})
+
 @app.route('/webhook/wpp/<int:sid>', methods=['POST'])
 def wpp_webhook(sid):
     """Recebe mensagens da Evolution API e responde com IA."""
@@ -4757,6 +4892,29 @@ def wpp_webhook(sid):
         return jsonify({'ok': True})
 
     nome_cliente = msg_data.get('pushName', '') or ''
+
+    # ── CRM: registrar/atualizar a conversa ──
+    try:
+        db_exec("""INSERT INTO crm_conversas (salon_id, conv_key, numero_cliente, nome_cliente, ultima_msg, ultima_em, nao_lidas)
+                   VALUES (%s,%s,%s,%s,%s,NOW(),1)
+                   ON CONFLICT (salon_id, conv_key) DO UPDATE SET
+                     numero_cliente=EXCLUDED.numero_cliente,
+                     nome_cliente=CASE WHEN crm_conversas.nome_cliente='' THEN EXCLUDED.nome_cliente ELSE crm_conversas.nome_cliente END,
+                     ultima_msg=EXCLUDED.ultima_msg, ultima_em=NOW(),
+                     nao_lidas=crm_conversas.nao_lidas+1""",
+                (sid, conv_key, numero_cliente, nome_cliente, texto[:100]))
+        db_commit()
+    except Exception as _ecrm:
+        print('Erro CRM registro:', _ecrm)
+
+    # ── Verificar se a IA está desligada para esta conversa (atendimento manual) ──
+    try:
+        crm_row = db_exec("SELECT ia_ativa FROM crm_conversas WHERE salon_id=%s AND conv_key=%s", (sid, conv_key), 'one')
+        if crm_row and crm_row.get('ia_ativa') == 0:
+            print('IA desligada para esta conversa — atendimento manual')
+            return jsonify({'ok': True, 'ia_manual': True})
+    except Exception:
+        pass
 
     # ── CONFIRMAÇÃO DE PRESENÇA (lembrete) — funciona mesmo com IA desativada ──
     try:

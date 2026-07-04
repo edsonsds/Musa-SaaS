@@ -1172,13 +1172,14 @@ var MENU=[
   {id:'exportar',label:'Exportar',icon:'<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>'},
   {id:'lixeira',label:'Lixeira',icon:'<polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>'},
   {id:'wpp_ia',label:'WhatsApp IA',destaque:true,icon:'<path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/>'},
+  {id:'crm',label:'CRM Conversas',icon:'<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>'},
   {id:'disparo',label:'Disparo',icon:'<path d="M22 2L11 13"/><path d="M22 2l-7 20-4-9-9-4 20-7z"/>'},
   {id:'programados',label:'Programados',icon:'<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>'},
   {id:'lembrete_semanal',label:'Lembrete Manicure',icon:'<path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2z"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>'},
   {id:'config',label:'Config',icon:'<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>'},
 ];
 
-var TITLES={dashboard:'Dashboard',agenda:'Agenda',clientes:'Clientes',profissionais:'Profissionais',servicos:'Serviços',caixa:'Caixa do Dia',comandas:'Comandas Fechadas',comissoes:'Comissões',faturamento:'Faturamento',despesas:'Despesas',agfin:'Agenda Financeira',retornos:'Alertas de Retorno',inativos:'Clientes Inativos',estoque:'Estoque',varejo:'Varejo',ocorrencias:'Ocorrências',avaliacoes:'Avaliações',importar:'Importar Dados',wpp_ia:'WhatsApp IA',disparo:'Disparo em Massa',programados:'Mensagens Programadas',config:'Configurações',aniversariantes:'Aniversariantes',metas:'Metas por Profissional',filaespera:'Fila de Espera',exportar:'Exportar Dados',lixeira:'Lixeira de Atendimentos',comvarejo:'Comissoes de Varejo',wptemplates:'Templates de WhatsApp'};
+var TITLES={dashboard:'Dashboard',agenda:'Agenda',clientes:'Clientes',profissionais:'Profissionais',servicos:'Serviços',caixa:'Caixa do Dia',comandas:'Comandas Fechadas',comissoes:'Comissões',faturamento:'Faturamento',despesas:'Despesas',agfin:'Agenda Financeira',retornos:'Alertas de Retorno',inativos:'Clientes Inativos',estoque:'Estoque',varejo:'Varejo',ocorrencias:'Ocorrências',avaliacoes:'Avaliações',importar:'Importar Dados',wpp_ia:'WhatsApp IA',crm:'CRM — Conversas',disparo:'Disparo em Massa',programados:'Mensagens Programadas',config:'Configurações',aniversariantes:'Aniversariantes',metas:'Metas por Profissional',filaespera:'Fila de Espera',exportar:'Exportar Dados',lixeira:'Lixeira de Atendimentos',comvarejo:'Comissoes de Varejo',wptemplates:'Templates de WhatsApp'};
 var TOP_ACTIONS={clientes:'+ Cliente',profissionais:'+ Profissional',servicos:'+ Serviço',despesas:'+ Despesa',estoque:'+ Item',varejo:'+ Venda',ocorrencias:'+ Ocorrência',avaliacoes:'+ Avaliação',agfin:'+ Lançamento',wptemplates:'+ Novo Template'};
 var PG_FNS={};
 
@@ -4983,7 +4984,7 @@ function navTo(pg) {
     servicos:pgSvcs, caixa:pgCaixa, comandas:pgComandas, comissoes:pgComs,
     faturamento:pgFat, despesas:pgDesp, agfin:pgAgFin, retornos:pgRetornos,
     inativos:pgInativos, estoque:pgEst, varejo:pgVar, ocorrencias:pgOcor,
-    avaliacoes:pgAval, importar:pgImportar, config:pgConfig, wpp_ia:pgWppIa,
+    avaliacoes:pgAval, importar:pgImportar, config:pgConfig, wpp_ia:pgWppIa, crm:pgCrm,
     aniversariantes:pgAniversariantes, metas:pgMetas, filaespera:pgFilaEspera,
     exportar:pgExportar, lixeira:pgLixeira, comvarejo:pgComVarejo,
     wptemplates:pgWptemplates, disparo:pgDisparo, programados:pgProgramados, lembrete_semanal:pgLembreteSemanal,
@@ -8358,6 +8359,150 @@ function wppInativo(cliId, nome, tel){
 
 <script>
 // ════ WHATSAPP IA ════
+// ═══════════════ CRM WHATSAPP ═══════════════
+var _crmConvAtiva = null;
+
+function pgCrm(){
+  var v = document.getElementById('view');
+  v.innerHTML =
+    '<div style="display:flex;height:calc(100vh - 120px);gap:0;border:1px solid var(--bdr);border-radius:14px;overflow:hidden;background:var(--card)">'+
+      '<div id="crm-lista" style="width:340px;border-right:1px solid var(--bdr);display:flex;flex-direction:column;min-width:0">'+
+        '<div style="padding:14px 16px;border-bottom:1px solid var(--bdr);font-weight:700;font-size:15px">💬 Conversas</div>'+
+        '<div id="crm-lista-itens" style="flex:1;overflow-y:auto"><div class="spinner"></div></div>'+
+      '</div>'+
+      '<div id="crm-chat" style="flex:1;display:flex;flex-direction:column;min-width:0">'+
+        '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--ink3);flex-direction:column;gap:10px">'+
+          '<div style="font-size:48px">💬</div><div>Selecione uma conversa</div>'+
+        '</div>'+
+      '</div>'+
+    '</div>';
+  carregarCrmConversas();
+}
+
+function carregarCrmConversas(){
+  fetch('/api/crm/conversas').then(function(r){return r.json();}).then(function(convs){
+    var box = document.getElementById('crm-lista-itens');
+    if(!box) return;
+    if(!convs.length){
+      box.innerHTML = '<div style="padding:30px;text-align:center;color:var(--ink3);font-size:13px">Nenhuma conversa ainda.<br>Elas aparecem aqui quando clientes mandam mensagem.</div>';
+      return;
+    }
+    var h = '';
+    convs.forEach(function(c){
+      var hora = c.ultima_em ? new Date(c.ultima_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
+      var nome = c.nome_cliente || c.numero_cliente || c.conv_key;
+      var badge = c.nao_lidas > 0 ? '<span style="background:#25d366;color:white;font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;margin-left:auto">'+c.nao_lidas+'</span>' : '';
+      var iaOff = c.ia_ativa === 0 ? '<span style="font-size:9px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;margin-left:4px">MANUAL</span>' : '';
+      h += '<div onclick="abrirCrmChat(\''+c.conv_key+'\',\''+(nome||'').replace(/\'/g,'')+'\')" style="padding:12px 16px;border-bottom:1px solid var(--bg2);cursor:pointer;transition:.15s" onmouseover="this.style.background=\'var(--bg2)\'" onmouseout="this.style.background=\'transparent\'">';
+      h += '<div style="display:flex;align-items:center;gap:8px"><span style="font-weight:600;font-size:14px">'+nome+'</span>'+iaOff+badge+'</div>';
+      h += '<div style="font-size:12px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">'+(c.ultima_msg||'')+'</div>';
+      h += '<div style="font-size:10px;color:var(--ink3);margin-top:2px">'+hora+'</div>';
+      h += '</div>';
+    });
+    box.innerHTML = h;
+  });
+}
+
+function abrirCrmChat(convKey, nome){
+  _crmConvAtiva = convKey;
+  var chat = document.getElementById('crm-chat');
+  chat.innerHTML = '<div style="flex:1;display:flex;align-items:center;justify-content:center"><div class="spinner"></div></div>';
+  fetch('/api/crm/conversa/'+convKey+'/mensagens').then(function(r){return r.json();}).then(function(d){
+    var msgs = d.mensagens || [];
+    var cli = d.cliente;
+    var ags = d.agendamentos || [];
+    // Estado da IA para esta conversa (default ligada)
+    var iaAtiva = (d.ia_ativa === undefined) ? true : (d.ia_ativa !== 0);
+    var h = '';
+    // Cabeçalho
+    h += '<div style="padding:12px 16px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:10px">';
+    h += '<div style="flex:1"><div style="font-weight:700;font-size:15px">'+nome+'</div>';
+    if(cli) h += '<div style="font-size:11px;color:var(--ink3)">'+(cli.tel||'')+'</div>';
+    h += '</div>';
+    h += '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;user-select:none">IA responde'+
+         '<input type="checkbox" id="crm-ia-toggle" onchange="toggleCrmIa(\''+convKey+'\')" style="width:16px;height:16px;accent-color:#25d366">'+
+         '</label>';
+    h += '</div>';
+    // Histórico de agendamentos
+    if(ags.length){
+      h += '<div style="padding:8px 16px;background:var(--bg2);border-bottom:1px solid var(--bdr);font-size:11px;color:var(--ink2);overflow-x:auto;white-space:nowrap">📅 ';
+      ags.slice(0,5).forEach(function(a){
+        var st = a.status==='concluido'?'✓':(a.status==='cancelado'?'✗':'🕐');
+        h += '<span style="display:inline-block;margin-right:10px">'+st+' '+fmtD(a.data)+' '+(a.svc||'')+'</span>';
+      });
+      h += '</div>';
+    }
+    // Mensagens
+    h += '<div id="crm-msgs" style="flex:1;overflow-y:auto;padding:16px;background:var(--bg);display:flex;flex-direction:column;gap:8px">';
+    msgs.forEach(function(m){
+      var euEnvio = (m.role === 'assistant');
+      var bg = euEnvio ? '#dcf8c6' : 'white';
+      var align = euEnvio ? 'flex-end' : 'flex-start';
+      var hora = m.criado_em ? new Date(m.criado_em).toLocaleString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+      h += '<div style="align-self:'+align+';max-width:75%;background:'+bg+';border-radius:10px;padding:8px 12px;box-shadow:0 1px 1px rgba(0,0,0,.1)">';
+      h += '<div style="font-size:13px;color:#1f2937;white-space:pre-wrap;word-break:break-word">'+m.content+'</div>';
+      h += '<div style="font-size:9px;color:#9ca3af;text-align:right;margin-top:2px">'+hora+'</div>';
+      h += '</div>';
+    });
+    h += '</div>';
+    // Barra de envio
+    h += '<div style="padding:10px 16px;border-top:1px solid var(--bdr);display:flex;gap:8px;align-items:flex-end">';
+    h += '<textarea id="crm-input" rows="1" placeholder="Digite uma mensagem..." style="flex:1;resize:none;border:1px solid var(--bdr);border-radius:20px;padding:10px 16px;font-size:14px;font-family:inherit;max-height:100px" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();enviarCrmMsg();}"></textarea>';
+    h += '<button onclick="enviarCrmMsg()" style="background:#25d366;color:white;border:none;border-radius:50%;width:44px;height:44px;cursor:pointer;font-size:18px;flex-shrink:0">➤</button>';
+    h += '</div>';
+    chat.innerHTML = h;
+    // Setar estado do toggle IA
+    var tgl = document.getElementById('crm-ia-toggle');
+    if(tgl) tgl.checked = iaAtiva;
+    // Rolar para o fim
+    var msgsBox = document.getElementById('crm-msgs');
+    if(msgsBox) msgsBox.scrollTop = msgsBox.scrollHeight;
+    // Atualizar lista (zerar não-lidas)
+    carregarCrmConversas();
+  });
+}
+
+function enviarCrmMsg(){
+  var input = document.getElementById('crm-input');
+  var texto = (input.value||'').trim();
+  if(!texto || !_crmConvAtiva) return;
+  input.value = '';
+  input.disabled = true;
+  fetch('/api/crm/conversa/'+_crmConvAtiva+'/enviar',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({texto:texto})
+  }).then(function(r){return r.json();}).then(function(d){
+    input.disabled = false;
+    if(d.ok){
+      // Adicionar a mensagem na tela imediatamente
+      var box = document.getElementById('crm-msgs');
+      if(box){
+        var div = document.createElement('div');
+        div.style.cssText = 'align-self:flex-end;max-width:75%;background:#dcf8c6;border-radius:10px;padding:8px 12px;box-shadow:0 1px 1px rgba(0,0,0,.1)';
+        div.innerHTML = '<div style="font-size:13px;color:#1f2937;white-space:pre-wrap">'+texto+'</div><div style="font-size:9px;color:#9ca3af;text-align:right">agora</div>';
+        box.appendChild(div);
+        box.scrollTop = box.scrollHeight;
+      }
+      input.focus();
+    } else {
+      toast('Falha ao enviar','err');
+      input.value = texto;
+    }
+  }).catch(function(){ input.disabled=false; toast('Erro de conexão','err'); });
+}
+
+function toggleCrmIa(convKey){
+  var chk = document.getElementById('crm-ia-toggle');
+  var ativa = chk.checked;
+  fetch('/api/crm/conversa/'+convKey+'/ia',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({ativa:ativa})
+  }).then(function(r){return r.json();}).then(function(d){
+    toast(ativa?'IA reativada para esta conversa':'Você assumiu esta conversa (IA desligada)','ok');
+    carregarCrmConversas();
+  });
+}
+
 function pgWppIa() {
   spin();
   fetch('/api/wpp-ia/config').then(function(r){return r.json();}).then(function(res){

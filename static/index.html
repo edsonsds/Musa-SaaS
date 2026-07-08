@@ -8362,102 +8362,192 @@ function wppInativo(cliId, nome, tel){
 // ═══════════════ CRM WHATSAPP ═══════════════
 var _crmConvAtiva = null;
 
+// Gera cor consistente a partir do nome (para o avatar)
+function crmAvatarCor(nome){
+  var cores = ['#6366f1','#8b5cf6','#ec4899','#f59e0b','#10b981','#06b6d4','#ef4444','#3b82f6','#14b8a6','#f97316'];
+  var soma = 0;
+  for(var i=0;i<(nome||'').length;i++) soma += nome.charCodeAt(i);
+  return cores[soma % cores.length];
+}
+function crmIniciais(nome){
+  var p = (nome||'?').trim().split(/\s+/);
+  if(p.length === 1) return p[0].substring(0,2).toUpperCase();
+  return (p[0][0] + p[p.length-1][0]).toUpperCase();
+}
+
 function pgCrm(){
   var v = document.getElementById('view');
   v.innerHTML =
-    '<div style="display:flex;height:calc(100vh - 120px);gap:0;border:1px solid var(--bdr);border-radius:14px;overflow:hidden;background:var(--card)">'+
-      '<div id="crm-lista" style="width:340px;border-right:1px solid var(--bdr);display:flex;flex-direction:column;min-width:0">'+
-        '<div style="padding:14px 16px;border-bottom:1px solid var(--bdr);font-weight:700;font-size:15px">💬 Conversas</div>'+
-        '<div id="crm-lista-itens" style="flex:1;overflow-y:auto"><div class="spinner"></div></div>'+
+    '<div style="display:flex;height:calc(100vh - 110px);border:1px solid #eceef2;border-radius:18px;overflow:hidden;background:#fff;box-shadow:0 4px 24px rgba(0,0,0,.04)">'+
+      // ── Painel esquerdo: lista ──
+      '<div style="width:360px;border-right:1px solid #eceef2;display:flex;flex-direction:column;min-width:0;background:#fafbfc">'+
+        '<div style="padding:20px 20px 14px">'+
+          '<div style="font-size:20px;font-weight:800;color:#111827;letter-spacing:-.02em">Conversas</div>'+
+          '<div style="font-size:12px;color:#9ca3af;margin-top:2px" id="crm-contador">Carregando...</div>'+
+        '</div>'+
+        '<div style="padding:0 16px 12px">'+
+          '<div style="position:relative">'+
+            '<input id="crm-busca" oninput="filtrarCrmConversas()" placeholder="Buscar conversa..." style="width:100%;border:1px solid #e5e7eb;background:#fff;border-radius:12px;padding:10px 14px 10px 36px;font-size:13px;outline:none;transition:.2s" onfocus="this.style.borderColor=\'#8b5cf6\'" onblur="this.style.borderColor=\'#e5e7eb\'">'+
+            '<svg style="position:absolute;left:12px;top:50%;transform:translateY(-50%);color:#9ca3af" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>'+
+          '</div>'+
+        '</div>'+
+        '<div id="crm-lista-itens" style="flex:1;overflow-y:auto;padding:0 10px"><div class="spinner" style="margin:30px auto"></div></div>'+
       '</div>'+
-      '<div id="crm-chat" style="flex:1;display:flex;flex-direction:column;min-width:0">'+
-        '<div style="flex:1;display:flex;align-items:center;justify-content:center;color:var(--ink3);flex-direction:column;gap:10px">'+
-          '<div style="font-size:48px">💬</div><div>Selecione uma conversa</div>'+
+      // ── Painel direito: chat ──
+      '<div id="crm-chat" style="flex:1;display:flex;flex-direction:column;min-width:0;background:#fff">'+
+        '<div style="flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:14px">'+
+          '<div style="width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#f3f4f6,#e5e7eb);display:flex;align-items:center;justify-content:center">'+
+            '<svg width="36" height="36" fill="none" stroke="#9ca3af" stroke-width="1.5" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>'+
+          '</div>'+
+          '<div style="color:#9ca3af;font-size:14px">Selecione uma conversa para começar</div>'+
         '</div>'+
       '</div>'+
     '</div>';
   carregarCrmConversas();
 }
 
+var _crmConvsCache = [];
+
 function carregarCrmConversas(){
   fetch('/api/crm/conversas').then(function(r){return r.json();}).then(function(convs){
-    var box = document.getElementById('crm-lista-itens');
-    if(!box) return;
-    if(!convs.length){
-      box.innerHTML = '<div style="padding:30px;text-align:center;color:var(--ink3);font-size:13px">Nenhuma conversa ainda.<br>Elas aparecem aqui quando clientes mandam mensagem.</div>';
-      return;
+    _crmConvsCache = convs || [];
+    renderCrmLista(_crmConvsCache);
+    var cont = document.getElementById('crm-contador');
+    if(cont){
+      var naoLidas = _crmConvsCache.reduce(function(s,c){return s+(c.nao_lidas||0);},0);
+      cont.textContent = _crmConvsCache.length + ' conversa' + (_crmConvsCache.length!==1?'s':'') + (naoLidas>0 ? ' · '+naoLidas+' não lida'+(naoLidas!==1?'s':'') : '');
     }
-    var h = '';
-    convs.forEach(function(c){
-      var hora = c.ultima_em ? new Date(c.ultima_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : '';
-      var nome = c.nome_cliente || c.numero_cliente || c.conv_key;
-      var badge = c.nao_lidas > 0 ? '<span style="background:#25d366;color:white;font-size:10px;font-weight:700;border-radius:10px;padding:1px 7px;margin-left:auto">'+c.nao_lidas+'</span>' : '';
-      var iaOff = c.ia_ativa === 0 ? '<span style="font-size:9px;background:#fef3c7;color:#92400e;padding:1px 5px;border-radius:4px;margin-left:4px">MANUAL</span>' : '';
-      h += '<div onclick="abrirCrmChat(\''+c.conv_key+'\',\''+(nome||'').replace(/\'/g,'')+'\')" style="padding:12px 16px;border-bottom:1px solid var(--bg2);cursor:pointer;transition:.15s" onmouseover="this.style.background=\'var(--bg2)\'" onmouseout="this.style.background=\'transparent\'">';
-      h += '<div style="display:flex;align-items:center;gap:8px"><span style="font-weight:600;font-size:14px">'+nome+'</span>'+iaOff+badge+'</div>';
-      h += '<div style="font-size:12px;color:var(--ink3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px">'+(c.ultima_msg||'')+'</div>';
-      h += '<div style="font-size:10px;color:var(--ink3);margin-top:2px">'+hora+'</div>';
-      h += '</div>';
-    });
-    box.innerHTML = h;
   });
+}
+
+function filtrarCrmConversas(){
+  var termo = (document.getElementById('crm-busca').value||'').toLowerCase();
+  var filtradas = _crmConvsCache.filter(function(c){
+    var nome = (c.nome_cliente||c.numero_cliente||'').toLowerCase();
+    return nome.indexOf(termo) !== -1;
+  });
+  renderCrmLista(filtradas);
+}
+
+function renderCrmLista(convs){
+  var box = document.getElementById('crm-lista-itens');
+  if(!box) return;
+  if(!convs.length){
+    box.innerHTML = '<div style="padding:40px 20px;text-align:center;color:#9ca3af;font-size:13px">Nenhuma conversa encontrada.</div>';
+    return;
+  }
+  var h = '';
+  convs.forEach(function(c){
+    var nome = c.nome_cliente || c.numero_cliente || c.conv_key;
+    var hora = c.ultima_em ? formatarHoraCrm(c.ultima_em) : '';
+    var ativa = _crmConvAtiva === c.conv_key;
+    var cor = crmAvatarCor(nome);
+    var ini = crmIniciais(nome);
+    var temNaoLidas = c.nao_lidas > 0;
+    h += '<div onclick="abrirCrmChat(\''+c.conv_key+'\',\''+(nome||'').replace(/\'/g,'')+'\')" '+
+         'style="display:flex;gap:12px;padding:12px;border-radius:14px;cursor:pointer;margin-bottom:2px;transition:.15s;'+
+         (ativa?'background:#f3f0ff':'background:transparent')+'" '+
+         'onmouseover="if(!this.dataset.ativa)this.style.background=\'#f9fafb\'" onmouseout="if(!this.dataset.ativa)this.style.background=\'transparent\'" '+
+         (ativa?'data-ativa="1"':'')+'>';
+    // Avatar
+    h += '<div style="width:46px;height:46px;border-radius:50%;background:'+cor+';display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:15px;flex-shrink:0">'+ini+'</div>';
+    // Conteúdo
+    h += '<div style="flex:1;min-width:0">';
+    h += '<div style="display:flex;align-items:center;gap:6px"><span style="font-weight:'+(temNaoLidas?'700':'600')+';font-size:14px;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+nome+'</span>';
+    if(c.ia_ativa === 0) h += '<span style="font-size:8px;font-weight:700;background:#fef3c7;color:#92400e;padding:2px 5px;border-radius:4px;flex-shrink:0">MANUAL</span>';
+    h += '<span style="margin-left:auto;font-size:11px;color:#9ca3af;flex-shrink:0">'+hora+'</span></div>';
+    h += '<div style="display:flex;align-items:center;gap:6px;margin-top:3px">';
+    h += '<span style="font-size:13px;color:'+(temNaoLidas?'#374151':'#9ca3af')+';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1">'+(c.ultima_msg||'')+'</span>';
+    if(temNaoLidas) h += '<span style="background:#8b5cf6;color:white;font-size:10px;font-weight:700;border-radius:10px;min-width:18px;height:18px;display:flex;align-items:center;justify-content:center;padding:0 5px;flex-shrink:0">'+c.nao_lidas+'</span>';
+    h += '</div></div></div>';
+  });
+  box.innerHTML = h;
+}
+
+function formatarHoraCrm(ts){
+  var d = new Date(ts);
+  var hoje = new Date();
+  var ontem = new Date(); ontem.setDate(ontem.getDate()-1);
+  if(d.toDateString() === hoje.toDateString()) return d.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  if(d.toDateString() === ontem.toDateString()) return 'Ontem';
+  return d.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});
 }
 
 function abrirCrmChat(convKey, nome){
   _crmConvAtiva = convKey;
+  renderCrmLista(_crmConvsCache); // re-render para destacar a ativa
   var chat = document.getElementById('crm-chat');
   chat.innerHTML = '<div style="flex:1;display:flex;align-items:center;justify-content:center"><div class="spinner"></div></div>';
   fetch('/api/crm/conversa/'+convKey+'/mensagens').then(function(r){return r.json();}).then(function(d){
     var msgs = d.mensagens || [];
     var cli = d.cliente;
     var ags = d.agendamentos || [];
-    // Estado da IA para esta conversa (default ligada)
     var iaAtiva = (d.ia_ativa === undefined) ? true : (d.ia_ativa !== 0);
+    var cor = crmAvatarCor(nome);
+    var ini = crmIniciais(nome);
     var h = '';
-    // Cabeçalho
-    h += '<div style="padding:12px 16px;border-bottom:1px solid var(--bdr);display:flex;align-items:center;gap:10px">';
-    h += '<div style="flex:1"><div style="font-weight:700;font-size:15px">'+nome+'</div>';
-    if(cli) h += '<div style="font-size:11px;color:var(--ink3)">'+(cli.tel||'')+'</div>';
+    // ── Cabeçalho ──
+    h += '<div style="padding:14px 20px;border-bottom:1px solid #eceef2;display:flex;align-items:center;gap:12px;background:#fff">';
+    h += '<div style="width:42px;height:42px;border-radius:50%;background:'+cor+';display:flex;align-items:center;justify-content:center;color:white;font-weight:700;font-size:14px;flex-shrink:0">'+ini+'</div>';
+    h += '<div style="flex:1;min-width:0"><div style="font-weight:700;font-size:15px;color:#111827">'+nome+'</div>';
+    h += '<div style="font-size:12px;color:#9ca3af">'+((cli&&cli.tel)||'')+'</div></div>';
+    // Toggle IA moderno
+    h += '<div style="display:flex;align-items:center;gap:8px;background:#f9fafb;border:1px solid #eceef2;border-radius:20px;padding:6px 12px">';
+    h += '<span style="font-size:12px;font-weight:600;color:#6b7280">IA</span>';
+    h += '<label style="position:relative;display:inline-block;width:38px;height:22px;cursor:pointer">';
+    h += '<input type="checkbox" id="crm-ia-toggle" onchange="toggleCrmIa(\''+convKey+'\')" style="opacity:0;width:0;height:0">';
+    h += '<span id="crm-ia-slider" style="position:absolute;inset:0;background:'+(iaAtiva?'#10b981':'#d1d5db')+';border-radius:22px;transition:.2s"></span>';
+    h += '<span id="crm-ia-knob" style="position:absolute;top:2px;left:'+(iaAtiva?'18px':'2px')+';width:18px;height:18px;background:white;border-radius:50%;transition:.2s;box-shadow:0 1px 3px rgba(0,0,0,.2)"></span>';
+    h += '</label></div>';
     h += '</div>';
-    h += '<label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;user-select:none">IA responde'+
-         '<input type="checkbox" id="crm-ia-toggle" onchange="toggleCrmIa(\''+convKey+'\')" style="width:16px;height:16px;accent-color:#25d366">'+
-         '</label>';
-    h += '</div>';
-    // Histórico de agendamentos
+    // ── Histórico de agendamentos ──
     if(ags.length){
-      h += '<div style="padding:8px 16px;background:var(--bg2);border-bottom:1px solid var(--bdr);font-size:11px;color:var(--ink2);overflow-x:auto;white-space:nowrap">📅 ';
-      ags.slice(0,5).forEach(function(a){
-        var st = a.status==='concluido'?'✓':(a.status==='cancelado'?'✗':'🕐');
-        h += '<span style="display:inline-block;margin-right:10px">'+st+' '+fmtD(a.data)+' '+(a.svc||'')+'</span>';
+      h += '<div style="padding:10px 20px;background:#fafbfc;border-bottom:1px solid #eceef2;display:flex;gap:8px;overflow-x:auto;white-space:nowrap">';
+      ags.slice(0,6).forEach(function(a){
+        var stCor = a.status==='concluido'?'#10b981':(a.status==='cancelado'?'#ef4444':'#8b5cf6');
+        var stIco = a.status==='concluido'?'✓':(a.status==='cancelado'?'✕':'○');
+        h += '<div style="flex-shrink:0;background:white;border:1px solid #eceef2;border-radius:10px;padding:6px 12px;font-size:11px">';
+        h += '<span style="color:'+stCor+';font-weight:700">'+stIco+'</span> ';
+        h += '<span style="color:#374151;font-weight:600">'+fmtD(a.data)+'</span> ';
+        h += '<span style="color:#9ca3af">'+(a.svc||'')+'</span></div>';
       });
       h += '</div>';
     }
-    // Mensagens
-    h += '<div id="crm-msgs" style="flex:1;overflow-y:auto;padding:16px;background:var(--bg);display:flex;flex-direction:column;gap:8px">';
+    // ── Mensagens ──
+    h += '<div id="crm-msgs" style="flex:1;overflow-y:auto;padding:20px;background:#f7f8fa;display:flex;flex-direction:column;gap:6px">';
+    var ultimaData = '';
     msgs.forEach(function(m){
+      var dataMsg = m.criado_em ? new Date(m.criado_em).toLocaleDateString('pt-BR') : '';
+      if(dataMsg && dataMsg !== ultimaData){
+        h += '<div style="align-self:center;background:#e5e7eb;color:#6b7280;font-size:11px;padding:3px 12px;border-radius:10px;margin:8px 0">'+dataMsg+'</div>';
+        ultimaData = dataMsg;
+      }
       var euEnvio = (m.role === 'assistant');
-      var bg = euEnvio ? '#dcf8c6' : 'white';
-      var align = euEnvio ? 'flex-end' : 'flex-start';
-      var hora = m.criado_em ? new Date(m.criado_em).toLocaleString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
-      h += '<div style="align-self:'+align+';max-width:75%;background:'+bg+';border-radius:10px;padding:8px 12px;box-shadow:0 1px 1px rgba(0,0,0,.1)">';
-      h += '<div style="font-size:13px;color:#1f2937;white-space:pre-wrap;word-break:break-word">'+m.content+'</div>';
-      h += '<div style="font-size:9px;color:#9ca3af;text-align:right;margin-top:2px">'+hora+'</div>';
-      h += '</div>';
+      var hora = m.criado_em ? new Date(m.criado_em).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) : '';
+      if(euEnvio){
+        h += '<div style="align-self:flex-end;max-width:70%;background:#8b5cf6;color:white;border-radius:16px 16px 4px 16px;padding:9px 14px;box-shadow:0 1px 2px rgba(139,92,246,.2)">';
+        h += '<div style="font-size:14px;white-space:pre-wrap;word-break:break-word;line-height:1.4">'+m.content+'</div>';
+        h += '<div style="font-size:10px;color:rgba(255,255,255,.7);text-align:right;margin-top:3px">'+hora+'</div></div>';
+      } else {
+        h += '<div style="align-self:flex-start;max-width:70%;background:white;border-radius:16px 16px 16px 4px;padding:9px 14px;box-shadow:0 1px 2px rgba(0,0,0,.06)">';
+        h += '<div style="font-size:14px;color:#1f2937;white-space:pre-wrap;word-break:break-word;line-height:1.4">'+m.content+'</div>';
+        h += '<div style="font-size:10px;color:#9ca3af;text-align:right;margin-top:3px">'+hora+'</div></div>';
+      }
     });
     h += '</div>';
-    // Barra de envio
-    h += '<div style="padding:10px 16px;border-top:1px solid var(--bdr);display:flex;gap:8px;align-items:flex-end">';
-    h += '<textarea id="crm-input" rows="1" placeholder="Digite uma mensagem..." style="flex:1;resize:none;border:1px solid var(--bdr);border-radius:20px;padding:10px 16px;font-size:14px;font-family:inherit;max-height:100px" onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();enviarCrmMsg();}"></textarea>';
-    h += '<button onclick="enviarCrmMsg()" style="background:#25d366;color:white;border:none;border-radius:50%;width:44px;height:44px;cursor:pointer;font-size:18px;flex-shrink:0">➤</button>';
-    h += '</div>';
+    // ── Input ──
+    h += '<div style="padding:14px 20px;border-top:1px solid #eceef2;display:flex;gap:10px;align-items:center;background:#fff">';
+    h += '<input id="crm-input" placeholder="Digite uma mensagem..." style="flex:1;border:1px solid #e5e7eb;border-radius:24px;padding:12px 18px;font-size:14px;outline:none;transition:.2s" onfocus="this.style.borderColor=\'#8b5cf6\'" onblur="this.style.borderColor=\'#e5e7eb\'" onkeydown="if(event.key===\'Enter\'){event.preventDefault();enviarCrmMsg();}">';
+    h += '<button onclick="enviarCrmMsg()" style="background:#8b5cf6;color:white;border:none;border-radius:50%;width:46px;height:46px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:.2s;box-shadow:0 2px 8px rgba(139,92,246,.3)" onmouseover="this.style.background=\'#7c3aed\'" onmouseout="this.style.background=\'#8b5cf6\'">';
+    h += '<svg width="20" height="20" fill="none" stroke="white" stroke-width="2" viewBox="0 0 24 24"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>';
+    h += '</button></div>';
     chat.innerHTML = h;
-    // Setar estado do toggle IA
     var tgl = document.getElementById('crm-ia-toggle');
     if(tgl) tgl.checked = iaAtiva;
-    // Rolar para o fim
     var msgsBox = document.getElementById('crm-msgs');
     if(msgsBox) msgsBox.scrollTop = msgsBox.scrollHeight;
-    // Atualizar lista (zerar não-lidas)
+    var inp = document.getElementById('crm-input');
+    if(inp) inp.focus();
     carregarCrmConversas();
   });
 }
@@ -8474,18 +8564,17 @@ function enviarCrmMsg(){
   }).then(function(r){return r.json();}).then(function(d){
     input.disabled = false;
     if(d.ok){
-      // Adicionar a mensagem na tela imediatamente
       var box = document.getElementById('crm-msgs');
       if(box){
         var div = document.createElement('div');
-        div.style.cssText = 'align-self:flex-end;max-width:75%;background:#dcf8c6;border-radius:10px;padding:8px 12px;box-shadow:0 1px 1px rgba(0,0,0,.1)';
-        div.innerHTML = '<div style="font-size:13px;color:#1f2937;white-space:pre-wrap">'+texto+'</div><div style="font-size:9px;color:#9ca3af;text-align:right">agora</div>';
+        div.style.cssText = 'align-self:flex-end;max-width:70%;background:#8b5cf6;color:white;border-radius:16px 16px 4px 16px;padding:9px 14px;box-shadow:0 1px 2px rgba(139,92,246,.2)';
+        div.innerHTML = '<div style="font-size:14px;white-space:pre-wrap;line-height:1.4">'+texto+'</div><div style="font-size:10px;color:rgba(255,255,255,.7);text-align:right;margin-top:3px">agora</div>';
         box.appendChild(div);
         box.scrollTop = box.scrollHeight;
       }
       input.focus();
     } else {
-      toast('Falha ao enviar','err');
+      toast(d.erro || 'Falha ao enviar','err');
       input.value = texto;
     }
   }).catch(function(){ input.disabled=false; toast('Erro de conexão','err'); });
@@ -8494,11 +8583,16 @@ function enviarCrmMsg(){
 function toggleCrmIa(convKey){
   var chk = document.getElementById('crm-ia-toggle');
   var ativa = chk.checked;
+  // Atualizar visual do toggle
+  var slider = document.getElementById('crm-ia-slider');
+  var knob = document.getElementById('crm-ia-knob');
+  if(slider) slider.style.background = ativa ? '#10b981' : '#d1d5db';
+  if(knob) knob.style.left = ativa ? '18px' : '2px';
   fetch('/api/crm/conversa/'+convKey+'/ia',{
     method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({ativa:ativa})
   }).then(function(r){return r.json();}).then(function(d){
-    toast(ativa?'IA reativada para esta conversa':'Você assumiu esta conversa (IA desligada)','ok');
+    toast(ativa?'✓ IA reativada nesta conversa':'Você assumiu esta conversa','ok');
     carregarCrmConversas();
   });
 }

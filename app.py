@@ -3930,12 +3930,32 @@ def _enviar_email(destinatario, assunto, corpo):
         print('Erro enviar email:', ex)
         return False
 
-def _enviar_wpp(sid, numero, texto):
-    """Envia mensagem via Evolution API v2.3.7. Retorna True/False."""
-    import urllib.request as _ur, urllib.error as _ue, json as _js
+def _enviar_wpp(sid, numero, texto, humanizar=True):
+    """Envia mensagem via Evolution API v2.3.7 com comportamento humanizado.
+    - Mostra "digitando..." antes de enviar (presence composing)
+    - Delay proporcional ao tamanho do texto (humano digita ~200 caracteres/min)
+    - Respeita limite diário de envios automáticos por salão
+    humanizar=False pula o delay (usado no envio manual do CRM, onde já há um humano digitando).
+    Retorna True/False."""
+    import urllib.request as _ur, urllib.error as _ue, json as _js, time as _t, random as _rd
     conn = db_exec("SELECT * FROM wpp_conexoes WHERE salon_id=%s", (sid,), 'one')
     if not conn:
         return False
+
+    # ── Limite diário de envios (proteção anti-bloqueio) ──
+    try:
+        lim_row = db_exec("SELECT valor FROM sistema_global WHERE chave='wpp_limite_diario'", fetch='one')
+        limite_diario = int(lim_row['valor']) if lim_row else 80
+        hoje_key = 'wpp_enviados_' + str(sid) + '_' + today_br().isoformat()
+        cnt_row = db_exec("SELECT valor FROM sistema_global WHERE chave=%s", (hoje_key,), 'one')
+        enviados_hoje = int(cnt_row['valor']) if cnt_row else 0
+        if enviados_hoje >= limite_diario:
+            print('LIMITE DIÁRIO atingido (' + str(limite_diario) + ') — envio bloqueado por proteção')
+            return False
+    except Exception:
+        enviados_hoje = 0
+        hoje_key = None
+
     evo_url = db_exec("SELECT valor FROM sistema_global WHERE chave='evolution_url'", fetch='one')
     evo_key = db_exec("SELECT valor FROM sistema_global WHERE chave='evolution_apikey'", fetch='one')
     eurl = (evo_url['valor'] if evo_url else conn['evolution_url']).rstrip('/')
@@ -3946,12 +3966,40 @@ def _enviar_wpp(sid, numero, texto):
         return False
     if not num.startswith('55') and len(num) <= 11:
         num = '55' + num
+
+    headers = {'Content-Type': 'application/json', 'apikey': ekey}
+
+    # ── 1. Mostrar "digitando..." (presence composing) ──
+    # Duração proporcional ao texto: humano digita ~3-4 caracteres/segundo
+    if humanizar:
+        dur_digitando = min(12, max(2, len(texto) / 3.5)) + _rd.uniform(0.5, 2.0)
+        try:
+            pres_payload = {'number': num, 'presence': 'composing', 'delay': int(dur_digitando * 1000)}
+            preq = _ur.Request(eurl + '/chat/sendPresence/' + inst,
+                               data=_js.dumps(pres_payload).encode(), headers=headers, method='POST')
+            _ur.urlopen(preq, timeout=10)
+            _t.sleep(dur_digitando)
+        except Exception:
+            # Se a rota de presence falhar, apenas aguarda o tempo (fallback silencioso)
+            _t.sleep(min(6, dur_digitando))
+
+    # ── 2. Enviar a mensagem ──
     try:
         req = _ur.Request(eurl + '/message/sendText/' + inst,
                           data=_js.dumps({'number': num, 'text': texto}).encode(),
-                          headers={'Content-Type': 'application/json', 'apikey': ekey}, method='POST')
+                          headers=headers, method='POST')
         with _ur.urlopen(req, timeout=15) as resp:
-            return resp.status in (200, 201)
+            ok = resp.status in (200, 201)
+            # ── 3. Incrementar contador diário ──
+            if ok and hoje_key:
+                try:
+                    db_exec("""INSERT INTO sistema_global (chave, valor) VALUES (%s, %s)
+                               ON CONFLICT (chave) DO UPDATE SET valor=EXCLUDED.valor""",
+                            (hoje_key, str(enviados_hoje + 1)))
+                    db_commit()
+                except Exception:
+                    pass
+            return ok
     except Exception:
         return False
 
@@ -4720,15 +4768,22 @@ def crm_enviar(conv_key):
     if not texto:
         return jsonify({'ok': False, 'erro': 'Mensagem vazia'})
     conv = db_exec("SELECT numero_cliente FROM crm_conversas WHERE salon_id=%s AND conv_key=%s", (sid, conv_key), 'one')
-    numero = conv['numero_cliente'] if conv else conv_key
-    ok = _enviar_wpp(sid, numero, texto)
+    numero = (conv['numero_cliente'] if conv and conv.get('numero_cliente') else '') or conv_key
+    numero = ''.join(ch for ch in str(numero) if ch.isdigit())
+    if len(numero) < 10:
+        return jsonify({'ok': False, 'erro': 'Número do cliente incompleto (' + numero + '). Não é possível enviar.'})
+    try:
+        ok = _enviar_wpp(sid, numero, texto, humanizar=False)
+    except Exception as ex:
+        return jsonify({'ok': False, 'erro': 'Erro no envio: ' + str(ex)[:150]})
     if ok:
         db_exec("INSERT INTO wpp_conversas (salon_id,numero_cliente,role,content) VALUES (%s,%s,'assistant',%s)",
                 (sid, numero, texto))
         db_exec("""UPDATE crm_conversas SET ultima_msg=%s, ultima_em=NOW()
                    WHERE salon_id=%s AND conv_key=%s""", (texto[:100], sid, conv_key))
         db_commit()
-    return jsonify({'ok': ok})
+        return jsonify({'ok': True})
+    return jsonify({'ok': False, 'erro': 'A Evolution recusou o envio. Verifique se o WhatsApp está conectado e se o número não está bloqueado.'})
 
 @app.route('/api/crm/conversa/<conv_key>/ia', methods=['POST'])
 def crm_toggle_ia(conv_key):
@@ -4979,40 +5034,43 @@ def wpp_webhook(sid):
     _instance      = conn['instance_name']
 
     def enviar_msg(numero, texto_resp):
-        """Envia mensagem via Evolution API (v1.7.4 usa textMessage)."""
-        import urllib.request as _ur, urllib.error as _ue, json as _js
-        # Número só com dígitos
+        """Envia resposta da IA via Evolution v2.3.7 com comportamento humanizado.
+        Mostra 'digitando...' por tempo proporcional ao texto antes de enviar."""
+        import urllib.request as _ur, urllib.error as _ue, json as _js, time as _t, random as _rd
         num = ''.join(ch for ch in numero if ch.isdigit())
-        # Garantir DDI 55 (Brasil) apenas se não tiver
         if not num.startswith('55') and len(num) <= 11:
             num = '55' + num
-        # v1.7.4 usa textMessage; v2.x usa text. Tentar ambos.
-        tentativas = [
-            {'number': num, 'textMessage': {'text': texto_resp}},
-            {'number': num, 'options': {'delay': 100, 'presence': 'composing'}, 'textMessage': {'text': texto_resp}},
-            {'number': num, 'text': texto_resp},
-        ]
-        log = []
-        for pl in tentativas:
-            try:
-                payload = _js.dumps(pl).encode()
-                req = _ur.Request(
-                    _evolution_url + '/message/sendText/' + _instance,
-                    data=payload,
-                    headers={'Content-Type': 'application/json', 'apikey': _api_key},
-                    method='POST'
-                )
-                with _ur.urlopen(req, timeout=15) as resp:
-                    body = resp.read().decode('utf-8', errors='ignore')
-                    log.append('OK ' + str(resp.status) + ' payload=' + _js.dumps(pl)[:60] + ' resp=' + body[:300])
-                    _salvar_envio_log(sid, 'SUCESSO', num, ' || '.join(log))
-                    return True
-            except _ue.HTTPError as he:
-                eb = he.read().decode('utf-8', errors='ignore')
-                log.append('HTTP ' + str(he.code) + ': ' + eb[:120])
-            except Exception as ex:
-                log.append('ERR: ' + str(ex)[:120])
-        _salvar_envio_log(sid, 'FALHA', num, ' | '.join(log))
+        headers = {'Content-Type': 'application/json', 'apikey': _api_key}
+        # 1. "Digitando..." — humano leva ~3-4 caracteres/segundo, com variação
+        dur = min(10, max(2, len(texto_resp) / 3.5)) + _rd.uniform(0.5, 1.5)
+        try:
+            preq = _ur.Request(_evolution_url + '/chat/sendPresence/' + _instance,
+                data=_js.dumps({'number': num, 'presence': 'composing', 'delay': int(dur*1000)}).encode(),
+                headers=headers, method='POST')
+            _ur.urlopen(preq, timeout=10)
+            _t.sleep(dur)
+        except Exception:
+            _t.sleep(min(5, dur))
+        # 2. Enviar — formato único da v2.3.7
+        try:
+            req = _ur.Request(
+                _evolution_url + '/message/sendText/' + _instance,
+                data=_js.dumps({'number': num, 'text': texto_resp}).encode(),
+                headers=headers, method='POST')
+            with _ur.urlopen(req, timeout=15) as resp:
+                body = resp.read().decode('utf-8', errors='ignore')
+                ok = resp.status in (200, 201)
+                _salvar_envio_log(sid, 'SUCESSO' if ok else 'FALHA', num, 'HTTP ' + str(resp.status) + ' ' + body[:200])
+                return ok
+        except _ue.HTTPError as he:
+            eb = ''
+            try: eb = he.read().decode('utf-8', errors='ignore')[:150]
+            except Exception: pass
+            _salvar_envio_log(sid, 'FALHA', num, 'HTTP ' + str(he.code) + ': ' + eb)
+            return False
+        except Exception as ex:
+            _salvar_envio_log(sid, 'FALHA', num, 'ERR: ' + str(ex)[:150])
+            return False
         return False
 
     def _salvar_envio_log(salon, status, num, detalhe):

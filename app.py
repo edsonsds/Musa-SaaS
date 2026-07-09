@@ -4716,9 +4716,35 @@ def programados_cancelar_tudo():
 
 @app.route('/api/crm/conversas', methods=['GET'])
 def crm_conversas():
-    """Lista todas as conversas ordenadas pela mais recente."""
+    """Lista todas as conversas ordenadas pela mais recente.
+    Antes de listar, importa para o CRM as conversas antigas de wpp_conversas
+    que ainda não foram registradas (histórico anterior à criação do CRM)."""
     sid, err = require_salon()
     if err: return err
+    try:
+        db_exec("""
+            INSERT INTO crm_conversas (salon_id, conv_key, numero_cliente, nome_cliente, ultima_msg, ultima_em, nao_lidas)
+            SELECT %s,
+                   RIGHT(regexp_replace(w.numero_cliente,'[^0-9]','','g'), 8) as ck,
+                   MAX(w.numero_cliente),
+                   COALESCE(MAX(NULLIF(w.nome_cliente,'')), ''),
+                   (SELECT w2.content FROM wpp_conversas w2
+                     WHERE w2.salon_id=w.salon_id
+                       AND RIGHT(regexp_replace(w2.numero_cliente,'[^0-9]','','g'),8)=RIGHT(regexp_replace(w.numero_cliente,'[^0-9]','','g'),8)
+                     ORDER BY w2.criado_em DESC LIMIT 1),
+                   MAX(w.criado_em),
+                   0
+            FROM wpp_conversas w
+            WHERE w.salon_id=%s
+              AND LENGTH(regexp_replace(w.numero_cliente,'[^0-9]','','g')) >= 8
+            GROUP BY RIGHT(regexp_replace(w.numero_cliente,'[^0-9]','','g'), 8), w.salon_id
+            ON CONFLICT (salon_id, conv_key) DO NOTHING
+        """, (sid, sid))
+        db_commit()
+    except Exception as _eimp:
+        print('CRM import histórico:', _eimp)
+        try: db_rollback()
+        except Exception: pass
     rows = db_exec("""
         SELECT c.*,
           (SELECT cl.id FROM clientes cl WHERE cl.salon_id=c.salon_id
@@ -4728,7 +4754,14 @@ def crm_conversas():
         ORDER BY c.ultima_em DESC
         LIMIT 200
     """, (sid,), 'all')
-    return jsonify([dict(r) for r in (rows or [])])
+    # Truncar prévia da última mensagem
+    out = []
+    for r in (rows or []):
+        r = dict(r)
+        if r.get('ultima_msg') and len(r['ultima_msg']) > 100:
+            r['ultima_msg'] = r['ultima_msg'][:100]
+        out.append(r)
+    return jsonify(out)
 
 @app.route('/api/crm/conversa/<conv_key>/mensagens', methods=['GET'])
 def crm_mensagens(conv_key):

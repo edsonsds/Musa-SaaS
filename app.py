@@ -3930,6 +3930,27 @@ def _enviar_email(destinatario, assunto, corpo):
         print('Erro enviar email:', ex)
         return False
 
+def _crm_marcar_lida(sid, numero):
+    """Marca a conversa como lida na Evolution (comportamento humano: ler antes de responder)."""
+    import urllib.request as _ur, json as _js
+    conn = db_exec("SELECT * FROM wpp_conexoes WHERE salon_id=%s", (sid,), 'one')
+    if not conn: return
+    evo_url = db_exec("SELECT valor FROM sistema_global WHERE chave='evolution_url'", fetch='one')
+    evo_key = db_exec("SELECT valor FROM sistema_global WHERE chave='evolution_apikey'", fetch='one')
+    eurl = (evo_url['valor'] if evo_url else conn['evolution_url']).rstrip('/')
+    ekey = evo_key['valor'] if evo_key else conn['instance_key']
+    inst = conn['instance_name']
+    num = ''.join(ch for ch in (numero or '') if ch.isdigit())
+    if not num.startswith('55') and len(num) <= 11:
+        num = '55' + num
+    try:
+        req = _ur.Request(eurl + '/chat/markMessageAsRead/' + inst,
+            data=_js.dumps({'readMessages': [{'remoteJid': num + '@s.whatsapp.net', 'fromMe': False}]}).encode(),
+            headers={'Content-Type': 'application/json', 'apikey': ekey}, method='POST')
+        _ur.urlopen(req, timeout=8)
+    except Exception:
+        pass
+
 def _enviar_wpp(sid, numero, texto, humanizar=True):
     """Envia mensagem via Evolution API v2.3.7 com comportamento humanizado.
     - Mostra "digitando..." antes de enviar (presence composing)
@@ -3970,9 +3991,13 @@ def _enviar_wpp(sid, numero, texto, humanizar=True):
     headers = {'Content-Type': 'application/json', 'apikey': ekey}
 
     # ── 1. Mostrar "digitando..." (presence composing) ──
-    # Duração proporcional ao texto: humano digita ~3-4 caracteres/segundo
+    # humanizar=True: duração proporcional ao texto (~3,5 chars/s)
+    # humanizar='curto': pausa breve de 1-4s (envio manual do CRM)
     if humanizar:
-        dur_digitando = min(12, max(2, len(texto) / 3.5)) + _rd.uniform(0.5, 2.0)
+        if humanizar == 'curto':
+            dur_digitando = _rd.uniform(1.0, 4.0)
+        else:
+            dur_digitando = min(12, max(2, len(texto) / 3.5)) + _rd.uniform(0.5, 2.0)
         try:
             pres_payload = {'number': num, 'presence': 'composing', 'delay': int(dur_digitando * 1000)}
             preq = _ur.Request(eurl + '/chat/sendPresence/' + inst,
@@ -4806,7 +4831,14 @@ def crm_enviar(conv_key):
     if len(numero) < 10:
         return jsonify({'ok': False, 'erro': 'Número do cliente incompleto (' + numero + '). Não é possível enviar.'})
     try:
-        ok = _enviar_wpp(sid, numero, texto, humanizar=False)
+        # Marcar a conversa como lida na Evolution (humano lê antes de responder)
+        try:
+            _crm_marcar_lida(sid, numero)
+        except Exception:
+            pass
+        # Humanização curta no envio manual: "digitando" breve (1-4s) —
+        # o texto já foi digitado por um humano, mas resposta instantânea 24/7 sinaliza robô
+        ok = _enviar_wpp(sid, numero, texto, humanizar='curto')
     except Exception as ex:
         return jsonify({'ok': False, 'erro': 'Erro no envio: ' + str(ex)[:150]})
     if ok:

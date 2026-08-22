@@ -760,6 +760,8 @@ def init_db():
         try: cur.execute(idx_sql)
         except: pass
     conn.commit()
+    # Cadastra o catálogo de serviços de Nail (roda uma única vez)
+    _seed_catalogo_nail(cur, conn)
     cur.close()
     conn.close()
     print("Banco inicializado com sucesso.")
@@ -857,6 +859,10 @@ def seed_novo_salao(salon_id, nome_salao='Meu Salão'):
         for nome,cat,preco,dur,com in servicos:
             db_exec("""INSERT INTO servicos (salon_id,nome,categoria,preco,duracao_min,comissao_pct,ativo)
                        VALUES (%s,%s,%s,%s,%s,%s,1)""", (salon_id,nome,cat,preco,dur,com))
+        # Catálogo de Nail Designer
+        for nome,cat,dur,preco in CATALOGO_NAIL:
+            db_exec("""INSERT INTO servicos (salon_id,nome,categoria,preco,duracao_min,comissao_pct,ativo)
+                       VALUES (%s,%s,%s,%s,%s,40,1)""", (salon_id,nome,cat,preco,dur))
 
     # ─── PROFISSIONAIS DE EXEMPLO ───
     r = db_exec("SELECT COUNT(*) as n FROM profissionais WHERE salon_id=%s", (salon_id,), 'one')
@@ -1522,39 +1528,68 @@ def servicos():
     db_commit()
     return jsonify({'ok': True})
 
+CATALOGO_NAIL = [
+    # (nome, categoria, duracao_min, preco)
+    ('Aplicação Fibra de vidro (simples)',      'Nail Designer', 120, 205.00),
+    ('Aplicação Fibra de vidro decorada',       'Nail Designer', 150, 240.00),
+    ('Gel na Tip (simples)',                    'Nail Designer', 120, 190.00),
+    ('Gel na Tip decorada',                     'Nail Designer', 150, 225.00),
+    ('Banho de gel',                            'Nail Designer', 100, 165.00),
+    ('Banho de gel decorado',                   'Nail Designer', 130, 200.00),
+    ('Blindagem',                               'Nail Designer',  60,  85.00),
+    ('Blindagem com esmaltação',                'Nail Designer',  75, 115.00),
+    ('Formatos Almond / Bailarina / Stileto',   'Nail Designer',  15,  15.00),
+
+    ('Manutenção (simples)',                    'Manutenção Nail',  90, 140.00),
+    ('Manutenção decorada',                     'Manutenção Nail', 120, 170.00),
+    ('Formatos Almond / Bailarina / Stileto',   'Manutenção Nail',  15,  15.00),
+    ('Reposição de unha com manutenção (cada)', 'Manutenção Nail',  10,  10.00),
+    ('Reposição de unha sem manutenção (cada)', 'Manutenção Nail',  20,  20.00),
+    ('Reposição de cantinhos',                  'Manutenção Nail',  10,   5.00),
+    ('Mudança de formato',                      'Manutenção Nail',  15,  15.00),
+    ('Taxa de manutenção de outra profissional','Manutenção Nail',  15,  20.00),
+
+    ('Esmaltação em gel',                       'Nail serviços gerais', 50, 70.00),
+    ('Remoção',                                 'Nail serviços gerais', 40, 45.00),
+    ('Nail Art personalizada',                  'Nail serviços gerais', 15,  5.00),
+    ('Pedrarias / Folha de ouro',               'Nail serviços gerais', 15,  5.00),
+    ('Encapsulada',                             'Nail serviços gerais', 20, 20.00),
+]
+
+def _seed_catalogo_nail(cur, conn):
+    """Cadastra o catálogo de Nail em todos os salões, uma única vez.
+    Marca no sistema_global para nunca repetir, mesmo se o serviço for excluído depois."""
+    try:
+        cur.execute("SELECT valor FROM sistema_global WHERE chave='seed_nail_v1'")
+        if cur.fetchone():
+            return
+        cur.execute("SELECT id FROM saloes")
+        saloes = [r['id'] if isinstance(r, dict) else r[0] for r in (cur.fetchall() or [])]
+        for s in saloes:
+            for nome, categoria, dur, preco in CATALOGO_NAIL:
+                cur.execute("""SELECT id FROM servicos WHERE salon_id=%s
+                               AND LOWER(nome)=LOWER(%s) AND LOWER(categoria)=LOWER(%s)""",
+                            (s, nome, categoria))
+                if cur.fetchone():
+                    continue
+                cur.execute("""INSERT INTO servicos (salon_id,nome,categoria,duracao_min,preco,comissao_pct,ativo)
+                               VALUES (%s,%s,%s,%s,%s,40,1)""", (s, nome, categoria, dur, preco))
+        cur.execute("""INSERT INTO sistema_global (chave, valor) VALUES ('seed_nail_v1','1')
+                       ON CONFLICT (chave) DO NOTHING""")
+        conn.commit()
+        print('Catálogo Nail cadastrado com sucesso.')
+    except Exception as ex:
+        print('Seed catálogo Nail:', ex)
+        try: conn.rollback()
+        except Exception: pass
+
 @app.route('/api/servicos/importar-nail', methods=['POST'])
 def servicos_importar_nail():
     """Importa em lote o catálogo de serviços de Nail Designer.
     Não duplica: se já existir serviço com o mesmo nome e categoria, apenas pula."""
     sid, err = require_salon()
     if err: return err
-    catalogo = [
-        # (nome, categoria, duracao_min, preco)
-        ('Aplicação Fibra de vidro (simples)',      'Nail Designer', 120, 205.00),
-        ('Aplicação Fibra de vidro decorada',       'Nail Designer', 150, 240.00),
-        ('Gel na Tip (simples)',                    'Nail Designer', 120, 190.00),
-        ('Gel na Tip decorada',                     'Nail Designer', 150, 225.00),
-        ('Banho de gel',                            'Nail Designer', 100, 165.00),
-        ('Banho de gel decorado',                   'Nail Designer', 130, 200.00),
-        ('Blindagem',                               'Nail Designer',  60,  85.00),
-        ('Blindagem com esmaltação',                'Nail Designer',  75, 115.00),
-        ('Formatos Almond / Bailarina / Stileto',   'Nail Designer',  15,  15.00),
-
-        ('Manutenção (simples)',                    'Manutenção Nail',  90, 140.00),
-        ('Manutenção decorada',                     'Manutenção Nail', 120, 170.00),
-        ('Formatos Almond / Bailarina / Stileto',   'Manutenção Nail',  15,  15.00),
-        ('Reposição de unha com manutenção (cada)', 'Manutenção Nail',  10,  10.00),
-        ('Reposição de unha sem manutenção (cada)', 'Manutenção Nail',  20,  20.00),
-        ('Reposição de cantinhos',                  'Manutenção Nail',  10,   5.00),
-        ('Mudança de formato',                      'Manutenção Nail',  15,  15.00),
-        ('Taxa de manutenção de outra profissional','Manutenção Nail',  15,  20.00),
-
-        ('Esmaltação em gel',                       'Nail serviços gerais', 50, 70.00),
-        ('Remoção',                                 'Nail serviços gerais', 40, 45.00),
-        ('Nail Art personalizada',                  'Nail serviços gerais', 15,  5.00),
-        ('Pedrarias / Folha de ouro',               'Nail serviços gerais', 15,  5.00),
-        ('Encapsulada',                             'Nail serviços gerais', 20, 20.00),
-    ]
+    catalogo = CATALOGO_NAIL
     criados, existentes = 0, 0
     for nome, categoria, dur, preco in catalogo:
         ja = db_exec("SELECT id FROM servicos WHERE salon_id=%s AND LOWER(nome)=LOWER(%s) AND LOWER(categoria)=LOWER(%s)",

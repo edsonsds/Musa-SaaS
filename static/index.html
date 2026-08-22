@@ -1287,30 +1287,68 @@ function buildMenuProfissional(){
 }
 
 // Renderiza tela de Minha Agenda
+var _agProDate = null;   // data visível na grade do profissional
+var _agProDados = null;  // último payload recebido
+
+function _agProHoje(){
+  var d = new Date();
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+}
+
 function renderMinhaAgenda(){
   document.getElementById('hdr-title').textContent = 'Minha Agenda';
   document.getElementById('hdr-sub').textContent = '';
-  var view = document.getElementById('view');
-  var periodo = window._periodo_pro || 'dia';
-  view.innerHTML =
-    '<div class="card" style="padding:18px">'+
-      '<div style="display:flex;gap:8px;margin-bottom:6px;flex-wrap:wrap;align-items:center">'+
-        '<button class="btn ' + (periodo==='dia'?'btn-p':'btn-out') + '" onclick="trocarPeriodoPro(\'dia\')">📅 Hoje</button>'+
-        '<button class="btn ' + (periodo==='semana'?'btn-p':'btn-out') + '" onclick="trocarPeriodoPro(\'semana\')">📆 Semana</button>'+
-        '<button class="btn ' + (periodo==='mes'?'btn-p':'btn-out') + '" onclick="trocarPeriodoPro(\'mes\')">🗓️ Mês</button>'+
-        '<button class="btn btn-out btn-sm" style="margin-left:auto" onclick="doLogout()">↩ Sair</button>'+
-      '</div>'+
-      '<div id="ag-pro-data-lbl" style="font-size:12px;color:var(--ink3);margin-bottom:10px;text-transform:capitalize"></div>'+
-      (podeAgendarProprio() ? '<button class="btn btn-p" style="width:100%;margin-bottom:14px" onclick="abrirNovoAgProf()">+ Novo Agendamento</button>' : '')+
-      '<div id="ag-pro-lista"><div class="spinner"></div></div>'+
-    '</div>';
-  carregarAgendaProfissional(periodo);
+  if(!_agProDate) _agProDate = _agProHoje();
+  var v = document.getElementById('view');
+  var h = '';
+  // ── Barra de navegação (igual à agenda do salão) ──
+  h += '<div class="flex aic gap3 mb4" style="flex-wrap:wrap">';
+  h += '<div class="flex gap2 aic">';
+  h += '<button class="btn btn-ghost btn-sm" onclick="agProNav(-1)">&#8592;</button>';
+  h += '<button class="btn btn-ghost btn-sm" onclick="agProHoje()">Hoje</button>';
+  h += '<button class="btn btn-ghost btn-sm" onclick="agProNav(1)">&#8594;</button>';
+  h += '<div style="position:relative;display:inline-block">';
+  h += '<input type="date" id="agpro-cal" value="'+_agProDate+'" onchange="agProGoDate(this.value)" style="position:absolute;top:0;left:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:16px">';
+  h += '<button class="btn btn-ghost btn-sm" type="button" style="pointer-events:none">📅</button>';
+  h += '</div></div>';
+  h += '<div id="agpro-dt-label" style="font-family:Sora,sans-serif;font-size:18px;font-weight:600;flex:1;text-align:center">';
+  h += new Date(_agProDate+'T12:00:00').toLocaleDateString('pt-BR',{weekday:'long',day:'numeric',month:'long'});
+  h += '</div>';
+  h += '<div class="flex gap2">';
+  if(podeAgendarProprio()) h += '<button class="btn btn-p" onclick="abrirNovoAgProf()">+ Agendar</button>';
+  h += '<button class="btn btn-out btn-sm" onclick="doLogout()">↩ Sair</button>';
+  h += '</div></div>';
+
+  // ── Grade: coluna de horários + 1 coluna (a dele) ──
+  h += '<div class="ag-wrap"><div class="ag-grid">';
+  h += '<div class="ag-times"><div class="ag-time-hdr"></div>';
+  for(var hh=7; hh<=19; hh++){
+    h += '<div class="ag-time-slot">'+(hh<10?'0':'')+hh+':00</div>';
+    h += '<div class="ag-time-slot" style="font-size:9px;color:var(--border2)">'+(hh<10?'0':'')+hh+':30</div>';
+  }
+  h += '<div class="ag-time-slot">20:00</div></div>';
+  h += '<div class="ag-cols" id="agpro-cols">';
+  h += '<div class="ag-col" style="flex:1">';
+  h += '<div class="ag-col-hdr" id="agpro-hdr"></div>';
+  h += '<div class="ag-body" id="agpro-body">';
+  for(var s=0; s<26; s++) h += '<div class="ag-slot" style="top:'+(s*44)+'px"></div>';
+  h += '</div></div></div></div></div>';
+
+  v.innerHTML = h;
+  carregarAgendaProfissional();
 }
 
-function trocarPeriodoPro(p){
-  window._periodo_pro = p;
+function agProNav(delta){
+  var d = new Date(_agProDate+'T12:00:00');
+  d.setDate(d.getDate()+delta);
+  _agProDate = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   renderMinhaAgenda();
 }
+function agProHoje(){ _agProDate = _agProHoje(); renderMinhaAgenda(); }
+function agProGoDate(v){ if(v){ _agProDate = v; renderMinhaAgenda(); } }
+
+// Mantido por compatibilidade (o menu antigo pode chamar)
+function trocarPeriodoPro(p){ renderMinhaAgenda(); }
 
 function podeAgendarProprio(){
   var p = window._permissoes || [];
@@ -1327,58 +1365,128 @@ function temFichaTecnica(cliId){
   return false;
 }
 
-function carregarAgendaProfissional(periodo){
+function carregarAgendaProfissional(){
+  if(!_agProDate) _agProDate = _agProHoje();
   Promise.all([
-    fetch('/api/profissional/minha-agenda?periodo=' + periodo + '&_=' + Date.now(), {cache:'no-store'}).then(function(r){return r.json();}),
+    fetch('/api/profissional/minha-agenda?data='+_agProDate+'&_='+Date.now(), {cache:'no-store'}).then(function(r){return r.json();}),
     fetch('/api/ficha-tecnica/existentes').then(function(r){return r.json();}).catch(function(){return [];})
-  ])
-    .then(function(results){
-      var d = results[0];
-      window._fichaExistentes = results[1] || [];
-      var box = document.getElementById('ag-pro-lista');
-      var dataLbl = document.getElementById('ag-pro-data-lbl');
-      if(dataLbl && d.data_ini){
-        var dIniFmt = new Date(d.data_ini+'T00:00:00').toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'2-digit'});
-        var dFimFmt = d.data_fim && d.data_fim!==d.data_ini ? ' até '+new Date(d.data_fim+'T00:00:00').toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'}) : '';
-        dataLbl.textContent = dIniFmt + dFimFmt;
-      }
-      if(!d.agenda || d.agenda.length === 0){
-        var txtVazio = periodo==='dia' ? 'hoje' : (periodo==='mes' ? 'neste mês' : 'nesta semana');
-        box.innerHTML = '<div style="text-align:center;padding:40px;color:#888"><div style="font-size:48px;margin-bottom:10px">📭</div><div style="font-size:16px">Nenhum atendimento ' + txtVazio + '</div></div>';
-        return;
-      }
-      var html = '';
-      var ultimoDia = '';
-      d.agenda.forEach(function(a){
-        if(a.data !== ultimoDia){
-          var dt = new Date(a.data + 'T00:00:00');
-          var nomeDia = dt.toLocaleDateString('pt-BR', {weekday:'long', day:'numeric', month:'long'});
-          html += '<div style="font-size:13px;font-weight:700;color:var(--p);margin:18px 0 8px;text-transform:uppercase;letter-spacing:.5px">' + nomeDia + '</div>';
-          ultimoDia = a.data;
-        }
-        var statusCor = a.status === 'concluido' ? '#10b981' : (a.status === 'em_andamento' ? '#f59e0b' : '#6366f1');
-        var statusLbl = a.status === 'concluido' ? '✓ Concluído' : (a.status === 'em_andamento' ? '⏳ Em andamento' : '🕐 Agendado');
-        html +=
-          '<div style="background:#fff;border:1px solid #e5e7eb;border-left:4px solid '+statusCor+';border-radius:10px;padding:14px;margin-bottom:8px">'+
-            '<div style="display:flex;justify-content:space-between;align-items:start;gap:10px;flex-wrap:wrap">'+
-              '<div style="flex:1;min-width:0">'+
-                '<div style="font-size:18px;font-weight:800;color:#1f2937">'+ a.h_ini + ' — ' + a.h_fim +'</div>'+
-                '<div style="font-size:15px;font-weight:600;margin-top:4px">'+ (a.cliente||'Cliente') +'</div>'+
-                '<div style="font-size:13px;color:#6b7280;margin-top:2px">'+ (a.servico||'Serviço') +'</div>'+
-              '</div>'+
-              '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">'+
-                '<div style="font-size:11px;font-weight:700;color:'+statusCor+';padding:4px 8px;background:'+statusCor+'15;border-radius:6px;white-space:nowrap">'+ statusLbl +'</div>'+
-                (a.cli_id ? '<button onclick="abrirFichaProf('+a.cli_id+',\''+(a.cliente||'').replace(/\'/g,'')+'\','+a.id+',\''+(a.servico||'').replace(/\'/g,'')+'\')" style="position:relative;overflow:visible;font-size:11px;font-weight:700;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:5px 12px 5px 8px;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent">🔬 Ficha'+(temFichaTecnica(a.cli_id)?'<span style="position:absolute;top:-4px;right:-4px;width:11px;height:11px;border-radius:50%;background:#10b981;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,.3)"></span>':'')+'</button>' : '') +
-                (a.status !== 'concluido' && podeAgendarProprio() ? '<button onclick="excluirAgProf('+a.id+',\''+(a.cliente||'').replace(/\'/g,'')+'\',\''+a.h_ini+'\')" style="font-size:11px;font-weight:700;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:5px 10px;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent">🗑 Excluir</button>' : '') +
-              '</div>'+
-            '</div>'+
-          '</div>';
-      });
-      box.innerHTML = html;
-    })
-    .catch(function(){
-      document.getElementById('ag-pro-lista').innerHTML = '<div style="text-align:center;padding:30px;color:#ef4444">Erro ao carregar agenda</div>';
+  ]).then(function(res){
+    var d = res[0];
+    _agProDados = d;
+    window._fichaExistentes = res[1] || [];
+    var pro = d.pro || {};
+    var cor = pro.cor || '#8b5cf6';
+
+    // Cabeçalho da coluna com avatar
+    var hdr = document.getElementById('agpro-hdr');
+    if(hdr){
+      var av = pro.foto_base64
+        ? '<img src="'+pro.foto_base64+'" style="width:34px;height:34px;border-radius:50%;object-fit:cover;border:2px solid '+cor+'">'
+        : '<div style="width:34px;height:34px;border-radius:50%;background:'+cor+';color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">'+((pro.nome||'?').substring(0,2).toUpperCase())+'</div>';
+      hdr.innerHTML = av + '<div class="ag-col-name">'+((pro.nome||'').split(' ')[0])+'</div>';
+    }
+
+    var body = document.getElementById('agpro-body');
+    if(!body) return;
+    // Limpar blocos anteriores
+    body.querySelectorAll('.ag-block, .ag-now').forEach(function(el){ el.remove(); });
+
+    // ── Bloqueios (faixas listradas) ──
+    (d.bloqueios || []).forEach(function(b){
+      if(!b.h_ini || !b.h_fim) return;
+      var i2 = b.h_ini.split(':'), f2 = b.h_fim.split(':');
+      var sm = parseInt(i2[0],10)*60 + parseInt(i2[1],10) - 420;
+      var em = parseInt(f2[0],10)*60 + parseInt(f2[1],10) - 420;
+      if(em <= 0 || sm >= 780) return;
+      var bl = document.createElement('div');
+      bl.className = 'ag-block';
+      bl.style.cssText = 'top:'+(sm*44/30)+'px;height:'+Math.max((em-sm)*44/30,28)+'px;left:2px;right:2px;'+
+        'background:repeating-linear-gradient(45deg,rgba(120,120,135,.18),rgba(120,120,135,.18) 7px,rgba(120,120,135,.30) 7px,rgba(120,120,135,.30) 14px);'+
+        'color:#4b5563;border:1px dashed #9ca3af;border-radius:8px;display:flex;align-items:center;justify-content:center;'+
+        'font-size:11px;font-weight:700;z-index:4';
+      bl.innerHTML = '🔒 ' + (b.motivo || 'Bloqueado');
+      body.appendChild(bl);
     });
+
+    // ── Atendimentos ──
+    var ags = (d.agenda || []).map(function(a){
+      var i2 = (a.h_ini||'00:00').split(':'), f2 = (a.h_fim||'00:00').split(':');
+      a._sm = parseInt(i2[0],10)*60 + parseInt(i2[1],10) - 420;
+      a._em = parseInt(f2[0],10)*60 + parseInt(f2[1],10) - 420;
+      return a;
+    });
+    ags.forEach(function(a){
+      var ov  = ags.filter(function(b){ return b._sm < a._em && b._em > a._sm; });
+      var pos = ov.indexOf(a), tot = ov.length;
+      var top = a._sm * 44/30;
+      var ht  = Math.max((a._em - a._sm) * 44/30, 28);
+      var mini = ht < 38;
+      var concl = a.status === 'concluido';
+      var bg = concl ? 'linear-gradient(135deg,#d1d5db,#e5e7eb)' : 'linear-gradient(135deg,'+cor+','+cor+'cc)';
+      var fc = concl ? '#6b7280' : 'white';
+      var wP = 100/tot, lP = pos*wP;
+      var bl = document.createElement('div');
+      bl.className = 'ag-block' + (concl?' done':'') + (mini?' mini':'');
+      bl.style.cssText = 'top:'+top+'px;height:'+ht+'px;background:'+bg+';color:'+fc+';'+
+        'left:calc(4px + '+lP+'%);width:calc('+wP+'% - 8px);right:auto;cursor:pointer;';
+      var temFicha = temFichaTecnica(a.cli_id) ? ' <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#10b981;box-shadow:0 0 0 2px rgba(255,255,255,.7);vertical-align:middle"></span>' : '';
+      bl.innerHTML = '<div class="abt">'+a.h_ini+'–'+a.h_fim+'</div>'+
+                     '<div class="abc">'+(a.cliente||'?')+(concl?' ✓':'')+temFicha+'</div>'+
+                     '<div class="abs">'+(a.servico||'')+'</div>';
+      bl.onclick = function(e){ e.stopPropagation(); abrirAgProPopup(a); };
+      body.appendChild(bl);
+    });
+
+    // ── Linha do horário atual (só se for hoje) ──
+    if(_agProDate === _agProHoje()){
+      var now = new Date();
+      var mn = now.getHours()*60 + now.getMinutes() - 420;
+      if(mn > 0 && mn < 780){
+        var ln = document.createElement('div');
+        ln.className = 'ag-now';
+        ln.style.cssText = 'position:absolute;left:0;right:0;top:'+(mn*44/30)+'px;height:2px;background:#ef4444;z-index:6';
+        body.appendChild(ln);
+      }
+    }
+  }).catch(function(){
+    var body = document.getElementById('agpro-body');
+    if(body) body.innerHTML = '<div style="padding:30px;text-align:center;color:#ef4444">Erro ao carregar agenda</div>';
+  });
+}
+
+// Popup ao tocar num atendimento da grade
+function abrirAgProPopup(a){
+  var concl = a.status === 'concluido';
+  var h = '';
+  h += '<div style="font-size:22px;font-weight:800;color:#111827">'+a.h_ini+' — '+a.h_fim+'</div>';
+  h += '<div style="font-size:16px;font-weight:600;margin-top:6px">'+(a.cliente||'Cliente')+'</div>';
+  h += '<div style="font-size:13px;color:#6b7280;margin-top:2px">'+(a.servico||'')+'</div>';
+  if(a.cli_tel) h += '<div style="font-size:13px;color:#9ca3af;margin-top:2px">'+a.cli_tel+'</div>';
+  if(a.obs) h += '<div style="margin-top:10px;background:#f9fafb;border-radius:8px;padding:10px;font-size:13px;color:#374151">'+a.obs+'</div>';
+  var stCor = concl ? '#10b981' : '#6366f1';
+  var stLbl = concl ? '✓ Concluído' : '🕐 Agendado';
+  h += '<div style="margin-top:10px"><span style="font-size:12px;font-weight:700;color:'+stCor+';background:'+stCor+'15;padding:5px 10px;border-radius:6px">'+stLbl+'</span></div>';
+  h += '<div style="display:flex;gap:8px;margin-top:16px;flex-wrap:wrap">';
+  if(a.cli_id){
+    h += '<button onclick="fecharAgProPopup();abrirFichaProf('+a.cli_id+',\''+(a.cliente||'').replace(/'/g,'')+'\','+a.id+',\''+(a.servico||'').replace(/'/g,'')+'\')" style="flex:1;min-width:120px;padding:11px;background:#f5f3ff;color:#7c3aed;border:1px solid #ddd6fe;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer">🔬 Ficha Técnica</button>';
+  }
+  if(!concl && podeAgendarProprio()){
+    h += '<button onclick="fecharAgProPopup();excluirAgProf('+a.id+',\''+(a.cliente||'').replace(/'/g,'')+'\',\''+a.h_ini+'\')" style="flex:1;min-width:100px;padding:11px;background:#fef2f2;color:#dc2626;border:1px solid #fecaca;border-radius:10px;font-weight:700;font-size:13px;cursor:pointer">🗑 Excluir</button>';
+  }
+  h += '</div>';
+
+  var ov = document.createElement('div');
+  ov.id = 'agpro-popup';
+  ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:flex-end;justify-content:center';
+  ov.onclick = function(e){ if(e.target===ov) fecharAgProPopup(); };
+  ov.innerHTML = '<div style="background:white;border-radius:20px 20px 0 0;max-width:460px;width:100%;max-height:90vh;overflow-y:auto">'+
+    '<div style="width:40px;height:4px;background:#e5e7eb;border-radius:2px;margin:12px auto 0"></div>'+
+    '<div style="padding:18px 20px 24px">'+h+'</div></div>';
+  document.body.appendChild(ov);
+}
+function fecharAgProPopup(){
+  var ov = document.getElementById('agpro-popup');
+  if(ov) ov.remove();
 }
 
 // ── Profissional: criar/excluir os próprios agendamentos ──
@@ -1387,8 +1495,8 @@ var _npCliId = null;
 
 function abrirNovoAgProf(){
   _npCliId = null;
-  var hoje = new Date();
-  var hojeStr = hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
+  // Usa a data que está sendo visualizada na grade
+  var hojeStr = _agProDate || _agProHoje();
   fetch('/api/servicos').then(function(r){return r.json();}).then(function(svcs){
     _npSvcs = (svcs||[]).filter(function(s){ return s.ativo; });
     var h = '';
@@ -1492,7 +1600,7 @@ function salvarAgProf(){
     btn.disabled = false; btn.textContent = 'Criar Agendamento'; btn.style.opacity = '1';
     if(d.ok){
       fecharNovoAgProf();
-      carregarAgendaProfissional(window._periodo_pro || 'dia');
+      carregarAgendaProfissional();
     } else {
       erro(d.erro || 'Não foi possível criar');
     }
@@ -1506,7 +1614,7 @@ function excluirAgProf(aid, cliNome, hora){
   if(!confirm('Excluir o agendamento de '+cliNome+' às '+hora+'?')) return;
   fetch('/api/profissional/agendamento/'+aid, {method:'DELETE'})
     .then(function(r){return r.json();}).then(function(d){
-      if(d.ok) carregarAgendaProfissional(window._periodo_pro || 'dia');
+      if(d.ok) carregarAgendaProfissional();
       else alert(d.erro || 'Não foi possível excluir');
     }).catch(function(){ alert('Erro de conexão'); });
 }

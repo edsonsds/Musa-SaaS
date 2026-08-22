@@ -177,8 +177,13 @@ def init_db():
         email TEXT DEFAULT '',
         senha_hash TEXT DEFAULT '',
         pode_login INTEGER DEFAULT 0,
-        pode_ver_comissao INTEGER DEFAULT 0
+        pode_ver_comissao INTEGER DEFAULT 0,
+        pode_agendar INTEGER DEFAULT 0
     )""")
+    try:
+        cur.execute("ALTER TABLE profissionais ADD COLUMN IF NOT EXISTS pode_agendar INTEGER DEFAULT 0")
+    except Exception:
+        conn.rollback()
 
     cur.execute("""
     CREATE TABLE IF NOT EXISTS servicos (
@@ -1155,8 +1160,11 @@ def api_login():
         session['uperfil']    = 'profissional'
         session['pro_id']     = p['id']
         session['pro_ver_comissao'] = bool(p['pode_ver_comissao'])
+        session['pro_pode_agendar'] = bool(p.get('pode_agendar'))
         return jsonify({'ok': True, 'nome': p['nome'], 'perfil': 'profissional', 'salon_id': salon_id,
-                        'permissoes': ['agenda_propria'] + (['comissao_propria'] if p['pode_ver_comissao'] else []),
+                        'permissoes': ['agenda_propria']
+                            + (['comissao_propria'] if p['pode_ver_comissao'] else [])
+                            + (['agendar_proprio'] if p.get('pode_agendar') else []),
                         'salon_nome': salao['nome']})
 
     return jsonify({'ok': False, 'erro': 'Usuário ou senha incorretos'})
@@ -1180,7 +1188,9 @@ def api_session():
         return jsonify({'logado': True, 'nome': p['nome'], 'perfil': 'profissional',
                         'pro_id': p['id'], 'salon_nome': session.get('salon_nome',''),
                         'salon_id': session.get('salon_id'),
-                        'permissoes': ['agenda_propria'] + (['comissao_propria'] if p['pode_ver_comissao'] else [])})
+                        'permissoes': ['agenda_propria']
+                            + (['comissao_propria'] if p['pode_ver_comissao'] else [])
+                            + (['agendar_proprio'] if p.get('pode_agendar') else [])})
     u = db_exec("SELECT * FROM usuarios WHERE id=%s AND salon_id=%s AND ativo=1",
                 (session['uid'], sid), 'one')
     if not u:
@@ -1249,23 +1259,24 @@ def profissionais():
     sid, err = require_salon()
     if err: return err
     if request.method == 'GET':
-        rows = db_exec("SELECT id,nome,cargo,cor,comissao_pct,h_inicio,h_fim,foto_base64,ativo,categorias,email,pode_login,pode_ver_comissao FROM profissionais WHERE salon_id=%s ORDER BY nome", (sid,), 'all')
+        rows = db_exec("SELECT id,nome,cargo,cor,comissao_pct,h_inicio,h_fim,foto_base64,ativo,categorias,email,pode_login,pode_ver_comissao,pode_agendar FROM profissionais WHERE salon_id=%s ORDER BY nome", (sid,), 'all')
         return jsonify([dict(r) for r in rows])
     d = request.json
     email = (d.get('email','') or '').strip().lower()
     senha = d.get('senha','') or ''
     pode_login = 1 if d.get('pode_login') else 0
     pode_ver_comissao = 1 if d.get('pode_ver_comissao') else 0
+    pode_agendar = 1 if d.get('pode_agendar') else 0
     senha_hash_val = hash_senha(senha) if senha else ''
     if email:
         ex = db_exec("SELECT id FROM profissionais WHERE salon_id=%s AND LOWER(email)=%s AND email!=''", (sid,email), 'one')
         if ex:
             return jsonify({'ok': False, 'erro': 'Email já cadastrado para outro profissional'})
-    cur = db_exec("""INSERT INTO profissionais (salon_id,nome,cargo,cor,comissao_pct,h_inicio,h_fim,foto_base64,ativo,email,senha_hash,pode_login,pode_ver_comissao)
-                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s) RETURNING id""",
+    cur = db_exec("""INSERT INTO profissionais (salon_id,nome,cargo,cor,comissao_pct,h_inicio,h_fim,foto_base64,ativo,email,senha_hash,pode_login,pode_ver_comissao,pode_agendar)
+                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s,1,%s,%s,%s,%s,%s) RETURNING id""",
                   (sid,d['nome'],d.get('cargo',''),d.get('cor','#EC4899'),d.get('comissao_pct',40),
                    d.get('h_inicio','08:00'),d.get('h_fim','20:00'),d.get('foto_base64',''),
-                   email,senha_hash_val,pode_login,pode_ver_comissao), 'one')
+                   email,senha_hash_val,pode_login,pode_ver_comissao,pode_agendar), 'one')
     db_commit()
     return jsonify({'ok': True, 'id': cur['id']})
 
@@ -1274,7 +1285,7 @@ def profissional(pid):
     sid, err = require_salon()
     if err: return err
     if request.method == 'GET':
-        row = db_exec("SELECT id,nome,cargo,cor,comissao_pct,h_inicio,h_fim,foto_base64,ativo,categorias,email,pode_login,pode_ver_comissao FROM profissionais WHERE id=%s AND salon_id=%s", (pid,sid), 'one')
+        row = db_exec("SELECT id,nome,cargo,cor,comissao_pct,h_inicio,h_fim,foto_base64,ativo,categorias,email,pode_login,pode_ver_comissao,pode_agendar FROM profissionais WHERE id=%s AND salon_id=%s", (pid,sid), 'one')
         return jsonify(dict(row) if row else {})
     if request.method == 'DELETE':
         db_exec("UPDATE profissionais SET ativo=0, pode_login=0 WHERE id=%s AND salon_id=%s", (pid,sid))
@@ -1285,22 +1296,23 @@ def profissional(pid):
     senha = d.get('senha','') or ''
     pode_login = 1 if d.get('pode_login') else 0
     pode_ver_comissao = 1 if d.get('pode_ver_comissao') else 0
+    pode_agendar = 1 if d.get('pode_agendar') else 0
     if email:
         ex = db_exec("SELECT id FROM profissionais WHERE salon_id=%s AND LOWER(email)=%s AND id!=%s AND email!=''", (sid,email,pid), 'one')
         if ex:
             return jsonify({'ok': False, 'erro': 'Email já cadastrado para outro profissional'})
     if senha:
         db_exec("""UPDATE profissionais SET nome=%s,cargo=%s,cor=%s,comissao_pct=%s,h_inicio=%s,h_fim=%s,
-                   foto_base64=%s,ativo=%s,email=%s,senha_hash=%s,pode_login=%s,pode_ver_comissao=%s WHERE id=%s AND salon_id=%s""",
+                   foto_base64=%s,ativo=%s,email=%s,senha_hash=%s,pode_login=%s,pode_ver_comissao=%s,pode_agendar=%s WHERE id=%s AND salon_id=%s""",
                 (d['nome'],d.get('cargo',''),d.get('cor','#EC4899'),d.get('comissao_pct',40),
                  d.get('h_inicio','08:00'),d.get('h_fim','20:00'),d.get('foto_base64',''),
-                 d.get('ativo',1),email,hash_senha(senha),pode_login,pode_ver_comissao,pid,sid))
+                 d.get('ativo',1),email,hash_senha(senha),pode_login,pode_ver_comissao,pode_agendar,pid,sid))
     else:
         db_exec("""UPDATE profissionais SET nome=%s,cargo=%s,cor=%s,comissao_pct=%s,h_inicio=%s,h_fim=%s,
-                   foto_base64=%s,ativo=%s,email=%s,pode_login=%s,pode_ver_comissao=%s WHERE id=%s AND salon_id=%s""",
+                   foto_base64=%s,ativo=%s,email=%s,pode_login=%s,pode_ver_comissao=%s,pode_agendar=%s WHERE id=%s AND salon_id=%s""",
                 (d['nome'],d.get('cargo',''),d.get('cor','#EC4899'),d.get('comissao_pct',40),
                  d.get('h_inicio','08:00'),d.get('h_fim','20:00'),d.get('foto_base64',''),
-                 d.get('ativo',1),email,pode_login,pode_ver_comissao,pid,sid))
+                 d.get('ativo',1),email,pode_login,pode_ver_comissao,pode_agendar,pid,sid))
     db_commit()
     return jsonify({'ok': True})
 
@@ -1332,11 +1344,15 @@ def minha_agenda():
 def minha_agenda_criar():
     """Profissional cria agendamento APENAS para si mesmo.
     O pro_id vem sempre da sessão — nunca do payload — para que ele não
-    consiga criar horário na agenda de outro profissional."""
+    consiga criar horário na agenda de outro profissional.
+    Requer a permissão 'pode_agendar' habilitada pelo administrador."""
     if session.get('uperfil') != 'profissional' or not session.get('pro_id'):
         return jsonify({'erro': 'Acesso negado'}), 403
     sid    = session['salon_id']
     pro_id = session['pro_id']
+    perm = db_exec("SELECT pode_agendar FROM profissionais WHERE id=%s AND salon_id=%s", (pro_id, sid), 'one')
+    if not perm or not perm.get('pode_agendar'):
+        return jsonify({'ok': False, 'erro': 'Você não tem permissão para criar agendamentos. Fale com o administrador.'}), 403
     d = request.json or {}
     cli_id = d.get('cli_id')
     svc_id = d.get('svc_id')
@@ -1389,11 +1405,15 @@ def minha_agenda_criar():
 @app.route('/api/profissional/agendamento/<int:aid>', methods=['DELETE'])
 def minha_agenda_excluir(aid):
     """Profissional exclui um agendamento SEU. A cláusula pro_id garante que
-    ele não consegue apagar horário de outro profissional."""
+    ele não consegue apagar horário de outro profissional.
+    Requer a permissão 'pode_agendar' habilitada pelo administrador."""
     if session.get('uperfil') != 'profissional' or not session.get('pro_id'):
         return jsonify({'erro': 'Acesso negado'}), 403
     sid    = session['salon_id']
     pro_id = session['pro_id']
+    perm = db_exec("SELECT pode_agendar FROM profissionais WHERE id=%s AND salon_id=%s", (pro_id, sid), 'one')
+    if not perm or not perm.get('pode_agendar'):
+        return jsonify({'ok': False, 'erro': 'Você não tem permissão para excluir agendamentos. Fale com o administrador.'}), 403
     ag = db_exec("SELECT id, status FROM agendamentos WHERE id=%s AND salon_id=%s AND pro_id=%s",
                  (aid, sid, pro_id), 'one')
     if not ag:

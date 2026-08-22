@@ -1328,6 +1328,82 @@ def minha_agenda():
         ORDER BY a.data,a.h_ini""", (sid,pro_id,ini.isoformat(),fim.isoformat()), 'all')
     return jsonify({'pro_id':pro_id,'periodo':periodo,'data_ini':ini.isoformat(),'data_fim':fim.isoformat(),'agenda':[dict(r) for r in rows]})
 
+@app.route('/api/profissional/agendamento', methods=['POST'])
+def minha_agenda_criar():
+    """Profissional cria agendamento APENAS para si mesmo.
+    O pro_id vem sempre da sessão — nunca do payload — para que ele não
+    consiga criar horário na agenda de outro profissional."""
+    if session.get('uperfil') != 'profissional' or not session.get('pro_id'):
+        return jsonify({'erro': 'Acesso negado'}), 403
+    sid    = session['salon_id']
+    pro_id = session['pro_id']
+    d = request.json or {}
+    cli_id = d.get('cli_id')
+    svc_id = d.get('svc_id')
+    data   = (d.get('data') or '').strip()
+    h_ini  = (d.get('h_ini') or '').strip()
+    h_fim  = (d.get('h_fim') or '').strip()
+    if not (cli_id and svc_id and data and h_ini and h_fim):
+        return jsonify({'ok': False, 'erro': 'Preencha cliente, serviço, data e horário'})
+
+    # Conflito com outro atendimento DELE no mesmo horário
+    conflito = db_exec("""SELECT a.id, c.nome as cli_nome, a.h_ini, a.h_fim
+        FROM agendamentos a LEFT JOIN clientes c ON c.id=a.cli_id
+        WHERE a.salon_id=%s AND a.pro_id=%s AND a.data=%s
+          AND a.status NOT IN ('cancelado')
+          AND a.h_ini < %s AND a.h_fim > %s
+        LIMIT 1""", (sid, pro_id, data, h_fim, h_ini), 'one')
+    if conflito:
+        return jsonify({'ok': False, 'erro': 'Você já tem atendimento nesse horário: '
+                        + (conflito.get('cli_nome') or 'cliente') + ' ('
+                        + conflito['h_ini'] + '–' + conflito['h_fim'] + ')'})
+
+    # Bloqueio/indisponibilidade que atinja este profissional
+    try:
+        ini_dt = data + ' ' + h_ini
+        fim_dt = data + ' ' + h_fim
+        bloq = db_exec("""SELECT motivo FROM indisponibilidades
+            WHERE salon_id=%s AND (pro_id=%s OR pro_id=0 OR pro_id IS NULL)
+              AND data_inicio < %s AND data_fim > %s LIMIT 1""",
+            (sid, pro_id, fim_dt, ini_dt), 'one')
+        if bloq:
+            return jsonify({'ok': False, 'erro': 'Horário bloqueado: ' + (bloq.get('motivo') or 'indisponível')})
+    except Exception:
+        pass
+
+    # Anti-duplicata (duplo toque no celular)
+    dup = db_exec("""SELECT id FROM agendamentos
+        WHERE salon_id=%s AND cli_id=%s AND pro_id=%s AND svc_id=%s AND data=%s AND h_ini=%s
+          AND criado_em > NOW() - INTERVAL '10 seconds' LIMIT 1""",
+        (sid, cli_id, pro_id, svc_id, data, h_ini), 'one')
+    if dup:
+        return jsonify({'ok': True, 'id': dup['id'], 'duplicado_ignorado': True})
+
+    cur = db_exec("""INSERT INTO agendamentos (salon_id,cli_id,pro_id,svc_id,data,h_ini,h_fim,preco,status,obs)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'agendado',%s) RETURNING id""",
+        (sid, cli_id, pro_id, svc_id, data, h_ini, h_fim, d.get('preco', 0), d.get('obs', '')), 'one')
+    db_exec("UPDATE retorno_alertas SET realizado=1 WHERE salon_id=%s AND cli_id=%s AND realizado=0", (sid, cli_id))
+    db_commit()
+    return jsonify({'ok': True, 'id': cur['id']})
+
+@app.route('/api/profissional/agendamento/<int:aid>', methods=['DELETE'])
+def minha_agenda_excluir(aid):
+    """Profissional exclui um agendamento SEU. A cláusula pro_id garante que
+    ele não consegue apagar horário de outro profissional."""
+    if session.get('uperfil') != 'profissional' or not session.get('pro_id'):
+        return jsonify({'erro': 'Acesso negado'}), 403
+    sid    = session['salon_id']
+    pro_id = session['pro_id']
+    ag = db_exec("SELECT id, status FROM agendamentos WHERE id=%s AND salon_id=%s AND pro_id=%s",
+                 (aid, sid, pro_id), 'one')
+    if not ag:
+        return jsonify({'ok': False, 'erro': 'Agendamento não encontrado na sua agenda'})
+    if ag.get('status') == 'concluido':
+        return jsonify({'ok': False, 'erro': 'Atendimento já concluído não pode ser excluído. Fale com o administrador.'})
+    db_exec("DELETE FROM agendamentos WHERE id=%s AND salon_id=%s AND pro_id=%s", (aid, sid, pro_id))
+    db_commit()
+    return jsonify({'ok': True})
+
 @app.route('/api/profissional/diagnostico-agenda', methods=['GET'])
 def diag_minha_agenda():
     """Diagnóstico: mostra o que 'hoje' significa no servidor e os agendamentos reais

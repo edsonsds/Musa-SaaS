@@ -2658,6 +2658,22 @@ function pgDups(){
 
 
 // ════ SERVIÇOS ════
+function importarNail(){
+  if(!confirm('Importar 22 serviços de Nail Designer?\n\nCategorias: Nail Designer, Manutenção Nail e Nail serviços gerais.\nServiços que já existem não serão duplicados.')) return;
+  toast('Importando...','');
+  fetch('/api/servicos/importar-nail',{method:'POST'})
+    .then(function(r){return r.json();}).then(function(d){
+      if(d.ok){
+        var msg = d.criados + ' serviço(s) criado(s)';
+        if(d.ja_existiam) msg += ' · ' + d.ja_existiam + ' já existia(m)';
+        toast(msg,'ok');
+        pgSvcs();
+      } else {
+        toast('Erro ao importar','err');
+      }
+    }).catch(function(){ toast('Erro de conexão','err'); });
+}
+
 function pgSvcs(){
   spin();
   fetch('/api/servicos').then(function(r){return r.json();}).then(function(svcs){
@@ -2683,9 +2699,10 @@ function pgSvcs(){
     h += '</div></div></div>';
 
     // Botões de ação
-    h += '<div class="flex gap2 mb4">';
+    h += '<div class="flex gap2 mb4" style="flex-wrap:wrap">';
     h += '<button class="btn btn-p" onclick="openSvcModal(0)">+ Novo Serviço</button>';
     h += '<button class="btn btn-g" onclick="novaCategoria()">+ Nova Categoria</button>';
+    h += '<button class="btn btn-soft" onclick="importarNail()">💅 Importar catálogo Nail</button>';
     h += '</div>';
 
     // Tabela por categoria

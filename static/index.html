@@ -1301,7 +1301,7 @@ function renderMinhaAgenda(){
         '<button class="btn btn-out btn-sm" style="margin-left:auto" onclick="doLogout()">↩ Sair</button>'+
       '</div>'+
       '<div id="ag-pro-data-lbl" style="font-size:12px;color:var(--ink3);margin-bottom:10px;text-transform:capitalize"></div>'+
-      '<button class="btn btn-p" style="width:100%;margin-bottom:14px" onclick="abrirNovoAgProf()">+ Novo Agendamento</button>'+
+      (podeAgendarProprio() ? '<button class="btn btn-p" style="width:100%;margin-bottom:14px" onclick="abrirNovoAgProf()">+ Novo Agendamento</button>' : '')+
       '<div id="ag-pro-lista"><div class="spinner"></div></div>'+
     '</div>';
   carregarAgendaProfissional(periodo);
@@ -1310,6 +1310,11 @@ function renderMinhaAgenda(){
 function trocarPeriodoPro(p){
   window._periodo_pro = p;
   renderMinhaAgenda();
+}
+
+function podeAgendarProprio(){
+  var p = window._permissoes || [];
+  return p.indexOf('agendar_proprio') !== -1;
 }
 
 function temFichaTecnica(cliId){
@@ -1364,7 +1369,7 @@ function carregarAgendaProfissional(periodo){
               '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">'+
                 '<div style="font-size:11px;font-weight:700;color:'+statusCor+';padding:4px 8px;background:'+statusCor+'15;border-radius:6px;white-space:nowrap">'+ statusLbl +'</div>'+
                 (a.cli_id ? '<button onclick="abrirFichaProf('+a.cli_id+',\''+(a.cliente||'').replace(/\'/g,'')+'\','+a.id+',\''+(a.servico||'').replace(/\'/g,'')+'\')" style="position:relative;overflow:visible;font-size:11px;font-weight:700;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:5px 12px 5px 8px;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent">🔬 Ficha'+(temFichaTecnica(a.cli_id)?'<span style="position:absolute;top:-4px;right:-4px;width:11px;height:11px;border-radius:50%;background:#10b981;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,.3)"></span>':'')+'</button>' : '') +
-                (a.status !== 'concluido' ? '<button onclick="excluirAgProf('+a.id+',\''+(a.cliente||'').replace(/\'/g,'')+'\',\''+a.h_ini+'\')" style="font-size:11px;font-weight:700;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:5px 10px;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent">🗑 Excluir</button>' : '') +
+                (a.status !== 'concluido' && podeAgendarProprio() ? '<button onclick="excluirAgProf('+a.id+',\''+(a.cliente||'').replace(/\'/g,'')+'\',\''+a.h_ini+'\')" style="font-size:11px;font-weight:700;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:5px 10px;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent">🗑 Excluir</button>' : '') +
               '</div>'+
             '</div>'+
           '</div>';
@@ -5850,6 +5855,8 @@ function openProModal(id) {
   h += '<input type="checkbox" id="gp-podelogin" style="width:18px;height:18px;cursor:pointer"> Permitir login no sistema</label>';
   h += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">';
   h += '<input type="checkbox" id="gp-vercomissao" style="width:18px;height:18px;cursor:pointer"> Pode ver resumo de comissões</label>';
+  h += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px">';
+  h += '<input type="checkbox" id="gp-podeagendar" style="width:18px;height:18px;cursor:pointer"> Pode criar/excluir os próprios agendamentos</label>';
   h += '</div>';
   h += '</div>';
 
@@ -5934,6 +5941,7 @@ function openProModal(id) {
         var femail = document.getElementById('gp-email'); if(femail) femail.value = p.email || '';
         var fpl = document.getElementById('gp-podelogin'); if(fpl) fpl.checked = !!p.pode_login;
         var fvc = document.getElementById('gp-vercomissao'); if(fvc) fvc.checked = !!p.pode_ver_comissao;
+        var fpa = document.getElementById('gp-podeagendar'); if(fpa) fpa.checked = !!p.pode_agendar;
       });
       // Comissoes: localStorage (preciso) ou fallback API
       var lsKey = 'bjpro_svc_com_' + id;
@@ -6050,6 +6058,7 @@ function savProComCat(id) {
   var senhaVal = (document.getElementById('gp-senha') || {}).value || '';
   var podeLog = (document.getElementById('gp-podelogin') || {}).checked || false;
   var podeCom = (document.getElementById('gp-vercomissao') || {}).checked || false;
+  var podeAgd = (document.getElementById('gp-podeagendar') || {}).checked || false;
   // Validações de login
   if (podeLog && !emailVal.trim()) {
     toast('Para permitir login, informe o email', 'err'); return;
@@ -6070,7 +6079,8 @@ function savProComCat(id) {
     email: emailVal,
     senha: senhaVal,
     pode_login: podeLog,
-    pode_ver_comissao: podeCom
+    pode_ver_comissao: podeCom,
+    pode_agendar: podeAgd
   };
 
   var url = id ? '/api/profissionais/' + id : '/api/profissionais';
@@ -7633,6 +7643,8 @@ function savProComCat(id) {
   var senhaVal = senhaEl ? (senhaEl.value || '') : '';
   var podeLog = podeLoginEl ? !!podeLoginEl.checked : false;
   var podeCom = verComEl ? !!verComEl.checked : false;
+  var podeAgdEl = document.getElementById('gp-podeagendar');
+  var podeAgd = podeAgdEl ? !!podeAgdEl.checked : false;
 
   // Validações de login
   if (podeLog && !emailVal) {
@@ -7654,7 +7666,8 @@ function savProComCat(id) {
     email:       emailVal,
     senha:       senhaVal,
     pode_login:  podeLog,
-    pode_ver_comissao: podeCom
+    pode_ver_comissao: podeCom,
+    pode_agendar: podeAgd
   };
 
   var url    = id ? '/api/profissionais/' + id : '/api/profissionais';
@@ -7730,6 +7743,7 @@ function openProModal(id) {
   h += '<div style="display:flex;gap:18px;flex-wrap:wrap;margin-top:10px">';
   h += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500"><input type="checkbox" id="gp-podelogin" style="width:18px;height:18px;cursor:pointer"> Permitir login no sistema</label>';
   h += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500"><input type="checkbox" id="gp-vercomissao" style="width:18px;height:18px;cursor:pointer"> Pode ver resumo de comissões</label>';
+  h += '<label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;font-weight:500"><input type="checkbox" id="gp-podeagendar" style="width:18px;height:18px;cursor:pointer"> Pode criar/excluir os próprios agendamentos</label>';
   h += '</div>';
   h += '</div>';
 
@@ -7756,6 +7770,7 @@ function openProModal(id) {
       var femail = document.getElementById('gp-email'); if(femail) femail.value = p.email || '';
       var fpl = document.getElementById('gp-podelogin'); if(fpl) fpl.checked = !!p.pode_login;
       var fvc = document.getElementById('gp-vercomissao'); if(fvc) fvc.checked = !!p.pode_ver_comissao;
+        var fpa = document.getElementById('gp-podeagendar'); if(fpa) fpa.checked = !!p.pode_agendar;
     });
   }
 

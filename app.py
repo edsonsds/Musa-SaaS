@@ -691,6 +691,15 @@ def init_db():
     )""")
 
     cur.execute("""
+    CREATE TABLE IF NOT EXISTS versiculo_visto (
+        id SERIAL PRIMARY KEY,
+        salon_id INTEGER NOT NULL,
+        pro_id INTEGER NOT NULL,
+        data TEXT NOT NULL,
+        UNIQUE(salon_id, pro_id, data)
+    )""")
+
+    cur.execute("""
     CREATE TABLE IF NOT EXISTS ficha_tecnica (
         id SERIAL PRIMARY KEY,
         salon_id INTEGER NOT NULL,
@@ -1377,6 +1386,70 @@ def minha_agenda():
                     'pro': dict(pro) if pro else None,
                     'bloqueios': bloqueios,
                     'agenda':[dict(r) for r in rows]})
+
+# ─── VERSÍCULO DO DIA ────────────────────────────────────────────────────────
+VERSICULOS = [
+    ("Tudo posso naquele que me fortalece.", "Filipenses 4:13"),
+    ("O Senhor é o meu pastor; nada me faltará.", "Salmos 23:1"),
+    ("Entrega o teu caminho ao Senhor; confia nele, e ele tudo fará.", "Salmos 37:5"),
+    ("Não temas, porque eu sou contigo; não te assombres, porque eu sou o teu Deus.", "Isaías 41:10"),
+    ("Alegrai-vos sempre no Senhor; outra vez digo: alegrai-vos.", "Filipenses 4:4"),
+    ("O amor é paciente, o amor é bondoso. Não inveja, não se vangloria.", "1 Coríntios 13:4"),
+    ("Lançando sobre ele toda a vossa ansiedade, porque ele tem cuidado de vós.", "1 Pedro 5:7"),
+    ("Sede fortes e corajosos. Não temais, porque o Senhor vosso Deus vai convosco.", "Deuteronômio 31:6"),
+    ("Tudo tem o seu tempo determinado, e há tempo para todo o propósito.", "Eclesiastes 3:1"),
+    ("Deleita-te no Senhor, e ele te concederá o que deseja o teu coração.", "Salmos 37:4"),
+    ("Confia no Senhor de todo o teu coração e não te estribes no teu próprio entendimento.", "Provérbios 3:5"),
+    ("Este é o dia que o Senhor fez; regozijemo-nos e alegremo-nos nele.", "Salmos 118:24"),
+    ("Buscai primeiro o reino de Deus e a sua justiça, e todas essas coisas vos serão acrescentadas.", "Mateus 6:33"),
+    ("Sejam fortes e corajosos! Não tenham medo nem se apavorem.", "Josué 1:9"),
+    ("A palavra de Deus é lâmpada para os meus pés e luz para o meu caminho.", "Salmos 119:105"),
+    ("Porque para Deus nada é impossível.", "Lucas 1:37"),
+    ("Deem graças em todas as circunstâncias, pois esta é a vontade de Deus.", "1 Tessalonicenses 5:18"),
+    ("O Senhor é bom, um refúgio em tempos de angústia.", "Naum 1:7"),
+    ("Vinde a mim, todos os que estais cansados e sobrecarregados, e eu vos aliviarei.", "Mateus 11:28"),
+    ("Grandes coisas fez o Senhor por nós, e por isso estamos alegres.", "Salmos 126:3"),
+    ("O Senhor te abençoe e te guarde; o Senhor faça resplandecer o seu rosto sobre ti.", "Números 6:24-25"),
+    ("Não andeis ansiosos por coisa alguma; em tudo, pela oração, apresentai os vossos pedidos a Deus.", "Filipenses 4:6"),
+    ("Ele dá força ao cansado e multiplica as forças ao que não tem nenhum vigor.", "Isaías 40:29"),
+    ("Ainda que eu ande pelo vale da sombra da morte, não temerei mal algum, porque tu estás comigo.", "Salmos 23:4"),
+    ("O que fizerem, façam de todo o coração, como para o Senhor.", "Colossenses 3:23"),
+    ("A alegria do Senhor é a vossa força.", "Neemias 8:10"),
+    ("Bem-aventurados os que têm fome e sede de justiça, porque serão fartos.", "Mateus 5:6"),
+    ("Deus é o nosso refúgio e fortaleza, socorro bem presente na angústia.", "Salmos 46:1"),
+    ("Aquietai-vos e sabei que eu sou Deus.", "Salmos 46:10"),
+    ("As misericórdias do Senhor se renovam a cada manhã; grande é a sua fidelidade.", "Lamentações 3:22-23"),
+    ("Sejam bondosos e compassivos uns para com os outros.", "Efésios 4:32"),
+]
+
+@app.route('/api/profissional/versiculo-dia', methods=['GET'])
+def versiculo_dia():
+    """Retorna o versículo do dia — apenas na primeira vez que o profissional abre no dia.
+    Nas próximas aberturas do mesmo dia devolve mostrar=False."""
+    if session.get('uperfil') != 'profissional' or not session.get('pro_id'):
+        return jsonify({'mostrar': False})
+    sid    = session['salon_id']
+    pro_id = session['pro_id']
+    hoje   = today_br()
+    hoje_s = hoje.isoformat()
+    try:
+        ja = db_exec("SELECT id FROM versiculo_visto WHERE salon_id=%s AND pro_id=%s AND data=%s",
+                     (sid, pro_id, hoje_s), 'one')
+        if ja:
+            return jsonify({'mostrar': False})
+        db_exec("""INSERT INTO versiculo_visto (salon_id, pro_id, data) VALUES (%s,%s,%s)
+                   ON CONFLICT (salon_id, pro_id, data) DO NOTHING""", (sid, pro_id, hoje_s))
+        db_commit()
+    except Exception:
+        try: db_rollback()
+        except Exception: pass
+        return jsonify({'mostrar': False})
+    # Mesmo versículo para todos no mesmo dia — escolhido pelo dia do ano
+    idx = hoje.timetuple().tm_yday % len(VERSICULOS)
+    texto, ref = VERSICULOS[idx]
+    pro = db_exec("SELECT nome FROM profissionais WHERE id=%s AND salon_id=%s", (pro_id, sid), 'one')
+    primeiro = (pro['nome'].split(' ')[0] if pro and pro.get('nome') else '')
+    return jsonify({'mostrar': True, 'texto': texto, 'referencia': ref, 'nome': primeiro})
 
 @app.route('/api/profissional/agendamento', methods=['POST'])
 def minha_agenda_criar():

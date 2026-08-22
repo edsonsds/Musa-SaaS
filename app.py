@@ -1330,8 +1330,16 @@ def minha_agenda():
     sid    = session['salon_id']
     pro_id = session['pro_id']
     periodo = request.args.get('periodo','dia')
+    data_req = (request.args.get('data') or '').strip()
     hoje = today_br()
-    if periodo == 'semana':
+    # Se veio uma data específica (navegação da grade), usa ela como o dia
+    if data_req:
+        try:
+            ini = fim = datetime.date.fromisoformat(data_req)
+            periodo = 'dia'
+        except Exception:
+            ini = fim = hoje
+    elif periodo == 'semana':
         ini = hoje - datetime.timedelta(days=hoje.weekday())
         fim = ini + datetime.timedelta(days=6)
     elif periodo == 'mes':
@@ -1340,11 +1348,35 @@ def minha_agenda():
         fim = prox_mes - datetime.timedelta(days=1)
     else:
         ini = fim = hoje
-    rows = db_exec("""SELECT a.id,a.data,a.h_ini,a.h_fim,a.status,a.cli_id,c.nome as cliente,s.nome as servico
+    rows = db_exec("""SELECT a.id,a.data,a.h_ini,a.h_fim,a.status,a.cli_id,a.obs,
+        c.nome as cliente, c.tel as cli_tel, s.nome as servico, a.preco
         FROM agendamentos a LEFT JOIN clientes c ON c.id=a.cli_id LEFT JOIN servicos s ON s.id=a.svc_id
         WHERE a.salon_id=%s AND a.pro_id=%s AND a.data BETWEEN %s AND %s AND a.status!='cancelado'
         ORDER BY a.data,a.h_ini""", (sid,pro_id,ini.isoformat(),fim.isoformat()), 'all')
-    return jsonify({'pro_id':pro_id,'periodo':periodo,'data_ini':ini.isoformat(),'data_fim':fim.isoformat(),'agenda':[dict(r) for r in rows]})
+    # Bloqueios/indisponibilidades que atingem este profissional no dia
+    bloqueios = []
+    if ini == fim:
+        try:
+            brows = db_exec("""SELECT motivo, data_inicio, data_fim FROM indisponibilidades
+                WHERE salon_id=%s AND (pro_id=%s OR pro_id=0 OR pro_id IS NULL)
+                  AND data_inicio < %s AND data_fim > %s""",
+                (sid, pro_id, ini.isoformat()+' 23:59', ini.isoformat()+' 00:00'), 'all')
+            for b in (brows or []):
+                b = dict(b)
+                bloqueios.append({
+                    'motivo': b.get('motivo',''),
+                    'h_ini': str(b['data_inicio'])[11:16] if b.get('data_inicio') else '',
+                    'h_fim': str(b['data_fim'])[11:16] if b.get('data_fim') else ''
+                })
+        except Exception:
+            pass
+    pro = db_exec("SELECT nome, cor, foto_base64, h_inicio, h_fim FROM profissionais WHERE id=%s AND salon_id=%s",
+                  (pro_id, sid), 'one')
+    return jsonify({'pro_id':pro_id,'periodo':periodo,
+                    'data_ini':ini.isoformat(),'data_fim':fim.isoformat(),
+                    'pro': dict(pro) if pro else None,
+                    'bloqueios': bloqueios,
+                    'agenda':[dict(r) for r in rows]})
 
 @app.route('/api/profissional/agendamento', methods=['POST'])
 def minha_agenda_criar():

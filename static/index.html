@@ -1330,7 +1330,7 @@ function renderMinhaAgenda(){
   h += '<div class="ag-cols" id="agpro-cols">';
   h += '<div class="ag-col" style="flex:1">';
   h += '<div class="ag-col-hdr" id="agpro-hdr"></div>';
-  h += '<div class="ag-body" id="agpro-body">';
+  h += '<div class="ag-body" id="agpro-body"'+(podeAgendarProprio()?' onclick="agProClick(event,this)" style="cursor:pointer"':'')+'>';
   for(var s=0; s<26; s++) h += '<div class="ag-slot" style="top:'+(s*44)+'px"></div>';
   h += '</div></div></div></div></div>';
 
@@ -1454,6 +1454,21 @@ function carregarAgendaProfissional(){
   });
 }
 
+// Clique numa célula vazia da grade → abre o modal já com data e horário
+function agProClick(e, col){
+  if(!podeAgendarProprio()) return;
+  // Ignora clique que veio de um bloco de atendimento (já tem onclick próprio)
+  if(e.target.closest && e.target.closest('.ag-block')) return;
+  var r = col.getBoundingClientRect();
+  var y = e.clientY - r.top + col.scrollTop;
+  var mt = Math.floor(y / 44 * 30);
+  var hh = Math.floor(mt / 60) + 7;
+  var mm = Math.floor((mt % 60) / 30) * 30;
+  if(hh < 7 || hh > 20) return;
+  var horaClicada = (hh < 10 ? '0' : '') + hh + ':' + (mm === 0 ? '00' : '30');
+  abrirNovoAgProf(horaClicada);
+}
+
 // Popup ao tocar num atendimento da grade
 function abrirAgProPopup(a){
   var concl = a.status === 'concluido';
@@ -1493,7 +1508,7 @@ function fecharAgProPopup(){
 var _npSvcs = [];
 var _npCliId = null;
 
-function abrirNovoAgProf(){
+function abrirNovoAgProf(horaIni){
   _npCliId = null;
   // Usa a data que está sendo visualizada na grade
   var hojeStr = _agProDate || _agProHoje();
@@ -1502,7 +1517,18 @@ function abrirNovoAgProf(){
     var h = '';
     h += '<div style="margin-bottom:12px"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Cliente *</label>';
     h += '<input id="np-cli-busca" oninput="buscarCliProf()" autocomplete="off" placeholder="Digite o nome ou telefone..." style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;outline:none">';
-    h += '<div id="np-cli-res" style="display:none;border:1px solid #e5e7eb;border-radius:10px;margin-top:4px;max-height:170px;overflow-y:auto;background:white"></div></div>';
+    h += '<div id="np-cli-res" style="display:none;border:1px solid #e5e7eb;border-radius:10px;margin-top:4px;max-height:170px;overflow-y:auto;background:white"></div>';
+    h += '<div id="np-cli-novo-link" style="display:none;margin-top:6px"><button onclick="mostrarCadRapProf()" style="background:none;border:none;color:#7c3aed;font-size:12px;font-weight:700;cursor:pointer;padding:0;text-decoration:underline">+ Cadastrar cliente novo</button></div>';
+    // Formulário de cadastro rápido
+    h += '<div id="np-cad-rap" style="display:none;margin-top:10px;background:#faf9ff;border:1.5px solid #ddd6fe;border-radius:12px;padding:12px">';
+    h += '<div style="font-size:12px;font-weight:700;color:#7c3aed;margin-bottom:8px">👤 Novo cliente</div>';
+    h += '<input id="np-nr-nome" placeholder="Nome completo *" style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:9px;font-size:14px;margin-bottom:7px;outline:none">';
+    h += '<input id="np-nr-tel" type="tel" placeholder="Telefone (11987654321)" style="width:100%;padding:10px 12px;border:1.5px solid #e5e7eb;border-radius:9px;font-size:14px;margin-bottom:8px;outline:none">';
+    h += '<div style="display:flex;gap:7px">';
+    h += '<button onclick="salvarCliRapProf()" style="flex:1;padding:9px;background:#7c3aed;color:white;border:none;border-radius:9px;font-weight:700;font-size:13px;cursor:pointer">Salvar cliente</button>';
+    h += '<button onclick="cancelarCadRapProf()" style="padding:9px 14px;background:white;color:#6b7280;border:1.5px solid #e5e7eb;border-radius:9px;font-weight:600;font-size:13px;cursor:pointer">Cancelar</button>';
+    h += '</div></div>';
+    h += '</div>';
     h += '<div style="margin-bottom:12px"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Serviço *</label>';
     h += '<select id="np-svc" onchange="calcFimProf()" style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;background:white"><option value="">Selecione...</option>';
     _npSvcs.forEach(function(s){
@@ -1513,7 +1539,7 @@ function abrirNovoAgProf(){
     h += '<input type="date" id="np-data" value="'+hojeStr+'" style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"></div>';
     h += '<div style="display:flex;gap:10px;margin-bottom:12px">';
     h += '<div style="flex:1"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Início *</label>';
-    h += '<input type="time" id="np-hini" onchange="calcFimProf()" style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"></div>';
+    h += '<input type="time" id="np-hini" value="'+(horaIni||'')+'" onchange="calcFimProf()" style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"></div>';
     h += '<div style="flex:1"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Fim *</label>';
     h += '<input type="time" id="np-hfim" style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"></div>';
     h += '</div>';
@@ -1534,6 +1560,9 @@ function abrirNovoAgProf(){
         '<div style="padding:16px 20px 24px;overflow-y:auto">'+h+'</div>'+
       '</div>';
     document.body.appendChild(ov);
+    // Foca direto na busca de cliente para agilizar
+    var inpCli = document.getElementById('np-cli-busca');
+    if(inpCli) setTimeout(function(){ inpCli.focus(); }, 100);
   }).catch(function(){ alert('Erro ao carregar serviços'); });
 }
 
@@ -1545,10 +1574,21 @@ function fecharNovoAgProf(){
 function buscarCliProf(){
   var termo = (document.getElementById('np-cli-busca').value||'').trim();
   var box = document.getElementById('np-cli-res');
+  var linkNovo = document.getElementById('np-cli-novo-link');
   _npCliId = null;
-  if(termo.length < 2){ box.style.display='none'; return; }
+  if(termo.length < 2){
+    box.style.display='none';
+    if(linkNovo) linkNovo.style.display='none';
+    return;
+  }
   fetch('/api/clientes?q='+encodeURIComponent(termo)).then(function(r){return r.json();}).then(function(cs){
-    if(!cs.length){ box.style.display='none'; return; }
+    // Com ou sem resultado, oferece cadastrar um novo
+    if(linkNovo) linkNovo.style.display='block';
+    if(!cs.length){
+      box.innerHTML = '<div style="padding:12px 13px;font-size:13px;color:#9ca3af">Nenhuma cliente encontrada com "'+termo+'"</div>';
+      box.style.display = 'block';
+      return;
+    }
     var h = '';
     cs.slice(0,15).forEach(function(c){
       h += '<div onclick="selCliProf('+c.id+',\''+(c.nome||'').replace(/\'/g,'')+'\')" style="padding:10px 13px;cursor:pointer;border-bottom:1px solid #f3f4f6;font-size:14px">'+
@@ -1564,6 +1604,71 @@ function selCliProf(id, nome){
   _npCliId = id;
   document.getElementById('np-cli-busca').value = nome;
   document.getElementById('np-cli-res').style.display = 'none';
+  var linkNovo = document.getElementById('np-cli-novo-link');
+  if(linkNovo) linkNovo.style.display = 'none';
+  var cad = document.getElementById('np-cad-rap');
+  if(cad) cad.style.display = 'none';
+}
+
+// ── Cadastro rápido de cliente (dentro do modal do profissional) ──
+function mostrarCadRapProf(){
+  var cad = document.getElementById('np-cad-rap');
+  if(!cad) return;
+  cad.style.display = 'block';
+  document.getElementById('np-cli-res').style.display = 'none';
+  // Aproveita o que já foi digitado na busca como nome
+  var digitado = (document.getElementById('np-cli-busca').value||'').trim();
+  var campoNome = document.getElementById('np-nr-nome');
+  if(digitado && !/^\d+$/.test(digitado)) campoNome.value = digitado;
+  else if(/^\d+$/.test(digitado)) document.getElementById('np-nr-tel').value = digitado;
+  campoNome.focus();
+}
+
+function cancelarCadRapProf(){
+  var cad = document.getElementById('np-cad-rap');
+  if(cad) cad.style.display = 'none';
+  document.getElementById('np-nr-nome').value = '';
+  document.getElementById('np-nr-tel').value = '';
+}
+
+function salvarCliRapProf(){
+  var nome = (document.getElementById('np-nr-nome').value||'').trim();
+  var tel  = (document.getElementById('np-nr-tel').value||'').trim();
+  if(!nome){
+    var e1 = document.getElementById('np-erro');
+    e1.textContent = 'Digite o nome da cliente'; e1.style.display = 'block';
+    return;
+  }
+  fetch('/api/clientes',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({nome:nome, tel:tel, email:''})
+  }).then(function(r){return r.json();}).then(function(d){
+    if(d && d.id){
+      // Vale tanto para cliente novo quanto para telefone já cadastrado
+      // (nesse caso a API devolve o id de quem já existe)
+      selCliProf(d.id, nome);
+      cancelarCadRapProf();
+      var e2 = document.getElementById('np-erro');
+      if(e2){
+        if(d.ok === false){
+          e2.textContent = 'Esse telefone já era de uma cliente cadastrada — ela foi selecionada.';
+          e2.style.background = '#fffbeb'; e2.style.borderColor = '#fde68a'; e2.style.color = '#92400e';
+          e2.style.display = 'block';
+        } else {
+          e2.style.display = 'none';
+        }
+      }
+      if(typeof loadGlobals === 'function') loadGlobals();
+    } else {
+      var e3 = document.getElementById('np-erro');
+      e3.textContent = (d && d.erro) || 'Não foi possível cadastrar a cliente';
+      e3.style.display = 'block';
+    }
+  }).catch(function(){
+    var e4 = document.getElementById('np-erro');
+    e4.textContent = 'Erro de conexão ao cadastrar';
+    e4.style.display = 'block';
+  });
 }
 
 function calcFimProf(){

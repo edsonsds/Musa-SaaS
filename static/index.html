@@ -1300,7 +1300,8 @@ function renderMinhaAgenda(){
         '<button class="btn ' + (periodo==='mes'?'btn-p':'btn-out') + '" onclick="trocarPeriodoPro(\'mes\')">🗓️ Mês</button>'+
         '<button class="btn btn-out btn-sm" style="margin-left:auto" onclick="doLogout()">↩ Sair</button>'+
       '</div>'+
-      '<div id="ag-pro-data-lbl" style="font-size:12px;color:var(--ink3);margin-bottom:14px;text-transform:capitalize"></div>'+
+      '<div id="ag-pro-data-lbl" style="font-size:12px;color:var(--ink3);margin-bottom:10px;text-transform:capitalize"></div>'+
+      '<button class="btn btn-p" style="width:100%;margin-bottom:14px" onclick="abrirNovoAgProf()">+ Novo Agendamento</button>'+
       '<div id="ag-pro-lista"><div class="spinner"></div></div>'+
     '</div>';
   carregarAgendaProfissional(periodo);
@@ -1363,6 +1364,7 @@ function carregarAgendaProfissional(periodo){
               '<div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">'+
                 '<div style="font-size:11px;font-weight:700;color:'+statusCor+';padding:4px 8px;background:'+statusCor+'15;border-radius:6px;white-space:nowrap">'+ statusLbl +'</div>'+
                 (a.cli_id ? '<button onclick="abrirFichaProf('+a.cli_id+',\''+(a.cliente||'').replace(/\'/g,'')+'\','+a.id+',\''+(a.servico||'').replace(/\'/g,'')+'\')" style="position:relative;overflow:visible;font-size:11px;font-weight:700;color:#7c3aed;background:#f5f3ff;border:1px solid #ddd6fe;border-radius:6px;padding:5px 12px 5px 8px;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent">🔬 Ficha'+(temFichaTecnica(a.cli_id)?'<span style="position:absolute;top:-4px;right:-4px;width:11px;height:11px;border-radius:50%;background:#10b981;border:2px solid white;box-shadow:0 1px 3px rgba(0,0,0,.3)"></span>':'')+'</button>' : '') +
+                (a.status !== 'concluido' ? '<button onclick="excluirAgProf('+a.id+',\''+(a.cliente||'').replace(/\'/g,'')+'\',\''+a.h_ini+'\')" style="font-size:11px;font-weight:700;color:#dc2626;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:5px 10px;cursor:pointer;white-space:nowrap;-webkit-tap-highlight-color:transparent">🗑 Excluir</button>' : '') +
               '</div>'+
             '</div>'+
           '</div>';
@@ -1372,6 +1374,136 @@ function carregarAgendaProfissional(periodo){
     .catch(function(){
       document.getElementById('ag-pro-lista').innerHTML = '<div style="text-align:center;padding:30px;color:#ef4444">Erro ao carregar agenda</div>';
     });
+}
+
+// ── Profissional: criar/excluir os próprios agendamentos ──
+var _npSvcs = [];
+var _npCliId = null;
+
+function abrirNovoAgProf(){
+  _npCliId = null;
+  var hoje = new Date();
+  var hojeStr = hoje.getFullYear()+'-'+String(hoje.getMonth()+1).padStart(2,'0')+'-'+String(hoje.getDate()).padStart(2,'0');
+  fetch('/api/servicos').then(function(r){return r.json();}).then(function(svcs){
+    _npSvcs = (svcs||[]).filter(function(s){ return s.ativo; });
+    var h = '';
+    h += '<div style="margin-bottom:12px"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Cliente *</label>';
+    h += '<input id="np-cli-busca" oninput="buscarCliProf()" autocomplete="off" placeholder="Digite o nome ou telefone..." style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;outline:none">';
+    h += '<div id="np-cli-res" style="display:none;border:1px solid #e5e7eb;border-radius:10px;margin-top:4px;max-height:170px;overflow-y:auto;background:white"></div></div>';
+    h += '<div style="margin-bottom:12px"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Serviço *</label>';
+    h += '<select id="np-svc" onchange="calcFimProf()" style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;background:white"><option value="">Selecione...</option>';
+    _npSvcs.forEach(function(s){
+      h += '<option value="'+s.id+'" data-dur="'+(s.duracao_min||60)+'" data-preco="'+(s.preco||0)+'">'+s.nome+' ('+(s.duracao_min||60)+'min)</option>';
+    });
+    h += '</select></div>';
+    h += '<div style="margin-bottom:12px"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Data *</label>';
+    h += '<input type="date" id="np-data" value="'+hojeStr+'" style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"></div>';
+    h += '<div style="display:flex;gap:10px;margin-bottom:12px">';
+    h += '<div style="flex:1"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Início *</label>';
+    h += '<input type="time" id="np-hini" onchange="calcFimProf()" style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"></div>';
+    h += '<div style="flex:1"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Fim *</label>';
+    h += '<input type="time" id="np-hfim" style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"></div>';
+    h += '</div>';
+    h += '<div id="np-erro" style="display:none;background:#fef2f2;border:1.5px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:10px"></div>';
+    h += '<button id="np-salvar" onclick="salvarAgProf()" style="width:100%;padding:13px;background:#7c3aed;color:white;border:none;border-radius:11px;font-weight:700;font-size:15px;cursor:pointer">Criar Agendamento</button>';
+
+    var ov = document.createElement('div');
+    ov.id = 'np-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:2000;display:flex;align-items:flex-end;justify-content:center';
+    ov.onclick = function(e){ if(e.target===ov) fecharNovoAgProf(); };
+    ov.innerHTML =
+      '<div style="background:white;border-radius:20px 20px 0 0;max-width:480px;width:100%;max-height:92vh;display:flex;flex-direction:column">'+
+        '<div style="width:40px;height:4px;background:#e5e7eb;border-radius:2px;margin:12px auto 0"></div>'+
+        '<div style="padding:16px 20px 10px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #f3f4f6">'+
+          '<div style="font-weight:800;font-size:16px">📅 Novo Agendamento</div>'+
+          '<button onclick="fecharNovoAgProf()" style="width:28px;height:28px;border-radius:50%;border:1.5px solid #e5e7eb;background:white;cursor:pointer;font-size:16px">×</button>'+
+        '</div>'+
+        '<div style="padding:16px 20px 24px;overflow-y:auto">'+h+'</div>'+
+      '</div>';
+    document.body.appendChild(ov);
+  }).catch(function(){ alert('Erro ao carregar serviços'); });
+}
+
+function fecharNovoAgProf(){
+  var ov = document.getElementById('np-overlay');
+  if(ov) ov.remove();
+}
+
+function buscarCliProf(){
+  var termo = (document.getElementById('np-cli-busca').value||'').trim();
+  var box = document.getElementById('np-cli-res');
+  _npCliId = null;
+  if(termo.length < 2){ box.style.display='none'; return; }
+  fetch('/api/clientes?q='+encodeURIComponent(termo)).then(function(r){return r.json();}).then(function(cs){
+    if(!cs.length){ box.style.display='none'; return; }
+    var h = '';
+    cs.slice(0,15).forEach(function(c){
+      h += '<div onclick="selCliProf('+c.id+',\''+(c.nome||'').replace(/\'/g,'')+'\')" style="padding:10px 13px;cursor:pointer;border-bottom:1px solid #f3f4f6;font-size:14px">'+
+           '<div style="font-weight:600">'+c.nome+'</div>'+
+           '<div style="font-size:12px;color:#9ca3af">'+(c.tel||'')+'</div></div>';
+    });
+    box.innerHTML = h;
+    box.style.display = 'block';
+  });
+}
+
+function selCliProf(id, nome){
+  _npCliId = id;
+  document.getElementById('np-cli-busca').value = nome;
+  document.getElementById('np-cli-res').style.display = 'none';
+}
+
+function calcFimProf(){
+  var sel = document.getElementById('np-svc');
+  var hini = document.getElementById('np-hini').value;
+  if(!sel.value || !hini) return;
+  var dur = parseInt(sel.options[sel.selectedIndex].getAttribute('data-dur')||60, 10);
+  var p = hini.split(':');
+  var total = parseInt(p[0],10)*60 + parseInt(p[1],10) + dur;
+  var hh = Math.floor(total/60) % 24, mm = total % 60;
+  document.getElementById('np-hfim').value = String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+}
+
+function salvarAgProf(){
+  var erroBox = document.getElementById('np-erro');
+  function erro(msg){ erroBox.textContent = msg; erroBox.style.display='block'; }
+  erroBox.style.display = 'none';
+  var svc = document.getElementById('np-svc').value;
+  var data = document.getElementById('np-data').value;
+  var hini = document.getElementById('np-hini').value;
+  var hfim = document.getElementById('np-hfim').value;
+  if(!_npCliId) return erro('Selecione a cliente na lista de busca');
+  if(!svc) return erro('Selecione o serviço');
+  if(!data || !hini || !hfim) return erro('Preencha data e horários');
+  if(hfim <= hini) return erro('O horário final precisa ser depois do inicial');
+  var sel = document.getElementById('np-svc');
+  var preco = parseFloat(sel.options[sel.selectedIndex].getAttribute('data-preco')||0);
+  var btn = document.getElementById('np-salvar');
+  btn.disabled = true; btn.textContent = 'Salvando...'; btn.style.opacity = '.6';
+  fetch('/api/profissional/agendamento',{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({cli_id:_npCliId, svc_id:parseInt(svc,10), data:data, h_ini:hini, h_fim:hfim, preco:preco})
+  }).then(function(r){return r.json();}).then(function(d){
+    btn.disabled = false; btn.textContent = 'Criar Agendamento'; btn.style.opacity = '1';
+    if(d.ok){
+      fecharNovoAgProf();
+      carregarAgendaProfissional(window._periodo_pro || 'dia');
+    } else {
+      erro(d.erro || 'Não foi possível criar');
+    }
+  }).catch(function(){
+    btn.disabled = false; btn.textContent = 'Criar Agendamento'; btn.style.opacity = '1';
+    erro('Erro de conexão');
+  });
+}
+
+function excluirAgProf(aid, cliNome, hora){
+  if(!confirm('Excluir o agendamento de '+cliNome+' às '+hora+'?')) return;
+  fetch('/api/profissional/agendamento/'+aid, {method:'DELETE'})
+    .then(function(r){return r.json();}).then(function(d){
+      if(d.ok) carregarAgendaProfissional(window._periodo_pro || 'dia');
+      else alert(d.erro || 'Não foi possível excluir');
+    }).catch(function(){ alert('Erro de conexão'); });
 }
 
 function abrirFichaProf(cliId, cliNome, agId, svcNome){

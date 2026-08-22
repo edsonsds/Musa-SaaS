@@ -1301,6 +1301,16 @@ function renderMinhaAgenda(){
   if(!_agProDate) _agProDate = _agProHoje();
   var v = document.getElementById('view');
   var h = '';
+  // ── Cartão de identificação do profissional ──
+  h += '<div id="agpro-identidade" style="display:flex;align-items:center;gap:14px;padding:16px 18px;border-radius:16px;margin-bottom:16px;background:linear-gradient(135deg,#f5f3ff,#faf5ff);border:1px solid #ede9fe">';
+  h += '<div id="agpro-ident-av" style="width:52px;height:52px;border-radius:50%;background:#8b5cf6;color:white;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;flex-shrink:0"></div>';
+  h += '<div style="min-width:0">';
+  h += '<div style="font-size:11px;font-weight:700;color:#9ca3af;text-transform:uppercase;letter-spacing:.6px">Minha Agenda</div>';
+  h += '<div id="agpro-ident-nome" style="font-size:20px;font-weight:800;color:#111827;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>';
+  h += '<div id="agpro-ident-sub" style="font-size:12px;color:#6b7280;margin-top:1px"></div>';
+  h += '</div>';
+  h += '<div id="agpro-ident-cont" style="margin-left:auto;text-align:right;flex-shrink:0"></div>';
+  h += '</div>';
   // ── Barra de navegação (igual à agenda do salão) ──
   h += '<div class="flex aic gap3 mb4" style="flex-wrap:wrap">';
   h += '<div class="flex gap2 aic">';
@@ -1336,6 +1346,60 @@ function renderMinhaAgenda(){
 
   v.innerHTML = h;
   carregarAgendaProfissional();
+  mostrarVersiculoDia();
+}
+
+// ── Versículo de meditação — uma vez por dia ──
+function mostrarVersiculoDia(){
+  if(window._versiculoJaChecado) return;
+  window._versiculoJaChecado = true;
+  fetch('/api/profissional/versiculo-dia').then(function(r){return r.json();}).then(function(d){
+    if(!d || !d.mostrar) return;
+    var saud = '';
+    var hr = new Date().getHours();
+    if(hr < 12) saud = 'Bom dia';
+    else if(hr < 18) saud = 'Boa tarde';
+    else saud = 'Boa noite';
+    if(d.nome) saud += ', ' + d.nome;
+
+    var ov = document.createElement('div');
+    ov.id = 'versiculo-overlay';
+    ov.style.cssText = 'position:fixed;inset:0;background:rgba(15,12,41,.72);z-index:3000;display:flex;align-items:center;justify-content:center;padding:20px;animation:vsFade .3s ease';
+    ov.onclick = function(e){ if(e.target===ov) fecharVersiculo(); };
+    ov.innerHTML =
+      '<div style="background:linear-gradient(160deg,#fffdf7,#fff9ed);border-radius:22px;max-width:400px;width:100%;padding:0;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.3);animation:vsUp .35s cubic-bezier(.22,1,.36,1)">'+
+        '<div style="background:linear-gradient(135deg,#8b5cf6,#7c3aed);padding:22px 24px 20px;text-align:center;color:white">'+
+          '<div style="font-size:32px;margin-bottom:4px">🕊️</div>'+
+          '<div style="font-size:13px;font-weight:600;opacity:.9">'+saud+'</div>'+
+          '<div style="font-size:11px;opacity:.7;margin-top:2px;text-transform:uppercase;letter-spacing:1px">Versículo do dia</div>'+
+        '</div>'+
+        '<div style="padding:26px 26px 22px;text-align:center">'+
+          '<div style="font-size:17px;line-height:1.65;color:#3b2f2f;font-style:italic">"'+d.texto+'"</div>'+
+          '<div style="font-size:13px;font-weight:700;color:#8b5cf6;margin-top:14px">'+d.referencia+'</div>'+
+        '</div>'+
+        '<div style="padding:0 22px 22px">'+
+          '<button onclick="fecharVersiculo()" style="width:100%;padding:13px;background:#8b5cf6;color:white;border:none;border-radius:12px;font-weight:700;font-size:15px;cursor:pointer">Amém 🙏</button>'+
+        '</div>'+
+      '</div>';
+    document.body.appendChild(ov);
+
+    // Animações (injetadas uma única vez)
+    if(!document.getElementById('vs-anim')){
+      var st = document.createElement('style');
+      st.id = 'vs-anim';
+      st.textContent = '@keyframes vsFade{from{opacity:0}to{opacity:1}}@keyframes vsUp{from{opacity:0;transform:translateY(24px) scale(.96)}to{opacity:1;transform:none}}';
+      document.head.appendChild(st);
+    }
+  }).catch(function(){});
+}
+
+function fecharVersiculo(){
+  var ov = document.getElementById('versiculo-overlay');
+  if(ov){
+    ov.style.transition = 'opacity .2s';
+    ov.style.opacity = '0';
+    setTimeout(function(){ ov.remove(); }, 200);
+  }
 }
 
 function agProNav(delta){
@@ -1376,13 +1440,53 @@ function carregarAgendaProfissional(){
     window._fichaExistentes = res[1] || [];
     var pro = d.pro || {};
     var cor = pro.cor || '#8b5cf6';
+    var nomeCompleto = pro.nome || '';
+    var iniciais = nomeCompleto
+      ? nomeCompleto.trim().split(/\s+/).map(function(p){return p[0];}).slice(0,2).join('').toUpperCase()
+      : '?';
+
+    // ── Cartão de identificação ──
+    var identAv = document.getElementById('agpro-ident-av');
+    if(identAv){
+      identAv.style.background = cor;
+      if(pro.foto_base64){
+        identAv.innerHTML = '<img src="'+pro.foto_base64+'" style="width:100%;height:100%;border-radius:50%;object-fit:cover">';
+        identAv.style.padding = '0';
+      } else {
+        identAv.textContent = iniciais;
+      }
+    }
+    var identNome = document.getElementById('agpro-ident-nome');
+    if(identNome){
+      identNome.textContent = nomeCompleto || 'Profissional';
+      identNome.style.color = cor;
+    }
+    var identSub = document.getElementById('agpro-ident-sub');
+    if(identSub){
+      var expediente = (pro.h_inicio && pro.h_fim) ? ('Expediente ' + pro.h_inicio + ' às ' + pro.h_fim) : '';
+      identSub.textContent = expediente;
+    }
+    var identCont = document.getElementById('agpro-ident-cont');
+    if(identCont){
+      var qtd = (d.agenda || []).length;
+      identCont.innerHTML = '<div style="font-size:24px;font-weight:800;color:'+cor+';line-height:1">'+qtd+'</div>'+
+        '<div style="font-size:11px;color:#9ca3af;font-weight:600">'+(qtd===1?'atendimento':'atendimentos')+'</div>';
+    }
+    var identBox = document.getElementById('agpro-identidade');
+    if(identBox){
+      identBox.style.borderColor = cor + '33';
+      identBox.style.background = 'linear-gradient(135deg,' + cor + '0f,' + cor + '05)';
+    }
+    // Nome também no cabeçalho da página
+    var hdrSub = document.getElementById('hdr-sub');
+    if(hdrSub && nomeCompleto) hdrSub.textContent = nomeCompleto;
 
     // Cabeçalho da coluna com avatar
     var hdr = document.getElementById('agpro-hdr');
     if(hdr){
       var av = pro.foto_base64
         ? '<img src="'+pro.foto_base64+'" style="width:34px;height:34px;border-radius:50%;object-fit:cover;border:2px solid '+cor+'">'
-        : '<div style="width:34px;height:34px;border-radius:50%;background:'+cor+';color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">'+((pro.nome||'?').substring(0,2).toUpperCase())+'</div>';
+        : '<div style="width:34px;height:34px;border-radius:50%;background:'+cor+';color:white;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px">'+iniciais+'</div>';
       hdr.innerHTML = av + '<div class="ag-col-name">'+((pro.nome||'').split(' ')[0])+'</div>';
     }
 

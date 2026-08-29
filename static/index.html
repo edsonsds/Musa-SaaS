@@ -1611,9 +1611,11 @@ function fecharAgProPopup(){
 // ── Profissional: criar/excluir os próprios agendamentos ──
 var _npSvcs = [];
 var _npCliId = null;
+var _npServicos = [];  // serviços escolhidos para este agendamento
 
 function abrirNovoAgProf(horaIni){
   _npCliId = null;
+  _npServicos = [];
   // Usa a data que está sendo visualizada na grade
   var hojeStr = _agProDate || _agProHoje();
   fetch('/api/servicos').then(function(r){return r.json();}).then(function(svcs){
@@ -1633,19 +1635,24 @@ function abrirNovoAgProf(horaIni){
     h += '<button onclick="cancelarCadRapProf()" style="padding:9px 14px;background:white;color:#6b7280;border:1.5px solid #e5e7eb;border-radius:9px;font-weight:600;font-size:13px;cursor:pointer">Cancelar</button>';
     h += '</div></div>';
     h += '</div>';
-    h += '<div style="margin-bottom:12px"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Serviço *</label>';
-    h += '<select id="np-svc" onchange="calcFimProf()" style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;background:white"><option value="">Selecione...</option>';
+    h += '<div style="margin-bottom:12px"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Serviços *</label>';
+    h += '<div style="display:flex;gap:7px">';
+    h += '<select id="np-svc" style="flex:1;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px;background:white"><option value="">Selecione...</option>';
     _npSvcs.forEach(function(s){
-      h += '<option value="'+s.id+'" data-dur="'+(s.duracao_min||60)+'" data-preco="'+(s.preco||0)+'">'+s.nome+' ('+(s.duracao_min||60)+'min)</option>';
+      h += '<option value="'+s.id+'" data-dur="'+(s.duracao_min||60)+'" data-preco="'+(s.preco||0)+'" data-nome="'+(s.nome||'').replace(/"/g,'')+'">'+s.nome+' ('+(s.duracao_min||60)+'min)</option>';
     });
-    h += '</select></div>';
+    h += '</select>';
+    h += '<button onclick="addSvcProf()" style="padding:11px 16px;background:#7c3aed;color:white;border:none;border-radius:10px;font-weight:700;font-size:14px;cursor:pointer;flex-shrink:0">+ Add</button>';
+    h += '</div>';
+    h += '<div id="np-svc-lista" style="margin-top:8px"></div>';
+    h += '</div>';
     h += '<div style="margin-bottom:12px"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Data *</label>';
     h += '<input type="date" id="np-data" value="'+hojeStr+'" style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"></div>';
-    h += '<div style="display:flex;gap:10px;margin-bottom:12px">';
+    h += '<div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-end">';
     h += '<div style="flex:1"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Início *</label>';
-    h += '<input type="time" id="np-hini" value="'+(horaIni||'')+'" onchange="calcFimProf()" style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"></div>';
-    h += '<div style="flex:1"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Fim *</label>';
-    h += '<input type="time" id="np-hfim" style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"></div>';
+    h += '<input type="time" id="np-hini" value="'+(horaIni||'')+'" onchange="renderSvcListaProf()" style="width:100%;padding:11px 13px;border:1.5px solid #e5e7eb;border-radius:10px;font-size:14px"></div>';
+    h += '<div style="flex:1"><label style="font-size:12px;font-weight:700;color:#374151;display:block;margin-bottom:5px">Término</label>';
+    h += '<div id="np-hfim-txt" style="padding:11px 13px;border:1.5px solid #f3f4f6;border-radius:10px;font-size:14px;background:#f9fafb;color:#6b7280">—</div></div>';
     h += '</div>';
     h += '<div id="np-erro" style="display:none;background:#fef2f2;border:1.5px solid #fecaca;color:#991b1b;border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:10px"></div>';
     h += '<button id="np-salvar" onclick="salvarAgProf()" style="width:100%;padding:13px;background:#7c3aed;color:white;border:none;border-radius:11px;font-weight:700;font-size:15px;cursor:pointer">Criar Agendamento</button>';
@@ -1664,6 +1671,7 @@ function abrirNovoAgProf(horaIni){
         '<div style="padding:16px 20px 24px;overflow-y:auto">'+h+'</div>'+
       '</div>';
     document.body.appendChild(ov);
+    renderSvcListaProf();
     // Foca direto na busca de cliente para agilizar
     var inpCli = document.getElementById('np-cli-busca');
     if(inpCli) setTimeout(function(){ inpCli.focus(); }, 100);
@@ -1775,36 +1783,101 @@ function salvarCliRapProf(){
   });
 }
 
-function calcFimProf(){
+// ── Lista de serviços do agendamento (vários por cliente) ──
+function addSvcProf(){
   var sel = document.getElementById('np-svc');
-  var hini = document.getElementById('np-hini').value;
-  if(!sel.value || !hini) return;
-  var dur = parseInt(sel.options[sel.selectedIndex].getAttribute('data-dur')||60, 10);
-  var p = hini.split(':');
-  var total = parseInt(p[0],10)*60 + parseInt(p[1],10) + dur;
-  var hh = Math.floor(total/60) % 24, mm = total % 60;
-  document.getElementById('np-hfim').value = String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+  if(!sel.value){
+    var e = document.getElementById('np-erro');
+    e.textContent = 'Escolha um serviço na lista antes de adicionar';
+    e.style.display = 'block';
+    return;
+  }
+  var op = sel.options[sel.selectedIndex];
+  _npServicos.push({
+    svc_id: parseInt(sel.value, 10),
+    nome: op.getAttribute('data-nome') || op.text,
+    duracao_min: parseInt(op.getAttribute('data-dur') || 60, 10),
+    preco: parseFloat(op.getAttribute('data-preco') || 0)
+  });
+  sel.value = '';
+  var er = document.getElementById('np-erro');
+  if(er) er.style.display = 'none';
+  renderSvcListaProf();
+}
+
+function removerSvcProf(i){
+  _npServicos.splice(i, 1);
+  renderSvcListaProf();
+}
+
+function renderSvcListaProf(){
+  var box = document.getElementById('np-svc-lista');
+  var fimTxt = document.getElementById('np-hfim-txt');
+  if(!box) return;
+  if(!_npServicos.length){
+    box.innerHTML = '<div style="font-size:12px;color:#9ca3af;padding:8px 2px">Nenhum serviço adicionado ainda.</div>';
+    if(fimTxt) fimTxt.textContent = '—';
+    return;
+  }
+  var hini = (document.getElementById('np-hini') || {}).value || '';
+  var cursor = null;
+  if(hini){
+    var p = hini.split(':');
+    cursor = parseInt(p[0],10)*60 + parseInt(p[1],10);
+  }
+  function hm(m){
+    m = Math.max(0, Math.min(m, 23*60+59));
+    return String(Math.floor(m/60)).padStart(2,'0')+':'+String(m%60).padStart(2,'0');
+  }
+  var h = '';
+  var totalPreco = 0, totalMin = 0;
+  _npServicos.forEach(function(s, i){
+    var faixa = '';
+    if(cursor !== null){
+      faixa = hm(cursor) + '–' + hm(cursor + s.duracao_min);
+      cursor += s.duracao_min;
+    }
+    totalPreco += (s.preco || 0);
+    totalMin += s.duracao_min;
+    h += '<div style="display:flex;align-items:center;gap:8px;background:#faf9ff;border:1px solid #ede9fe;border-radius:10px;padding:9px 11px;margin-bottom:6px">';
+    h += '<div style="width:20px;height:20px;border-radius:50%;background:#7c3aed;color:white;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0">'+(i+1)+'</div>';
+    h += '<div style="flex:1;min-width:0">';
+    h += '<div style="font-size:13px;font-weight:600;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+s.nome+'</div>';
+    h += '<div style="font-size:11px;color:#9ca3af">'+(faixa ? faixa+' · ' : '')+s.duracao_min+'min'+(s.preco ? ' · R$ '+s.preco.toFixed(2).replace('.',',') : '')+'</div>';
+    h += '</div>';
+    h += '<button onclick="removerSvcProf('+i+')" style="background:none;border:none;color:#dc2626;font-size:16px;cursor:pointer;flex-shrink:0;padding:0 4px">×</button>';
+    h += '</div>';
+  });
+  // Resumo
+  h += '<div style="display:flex;justify-content:space-between;padding:8px 11px;background:#f3f0ff;border-radius:10px;font-size:12px;font-weight:700;color:#5b21b6">';
+  h += '<span>'+_npServicos.length+' serviço'+(_npServicos.length>1?'s':'')+' · '+totalMin+'min</span>';
+  h += '<span>R$ '+totalPreco.toFixed(2).replace('.',',')+'</span>';
+  h += '</div>';
+  box.innerHTML = h;
+  if(fimTxt) fimTxt.textContent = (cursor !== null) ? hm(cursor) : '—';
 }
 
 function salvarAgProf(){
   var erroBox = document.getElementById('np-erro');
   function erro(msg){ erroBox.textContent = msg; erroBox.style.display='block'; }
   erroBox.style.display = 'none';
-  var svc = document.getElementById('np-svc').value;
   var data = document.getElementById('np-data').value;
   var hini = document.getElementById('np-hini').value;
-  var hfim = document.getElementById('np-hfim').value;
   if(!_npCliId) return erro('Selecione a cliente na lista de busca');
-  if(!svc) return erro('Selecione o serviço');
-  if(!data || !hini || !hfim) return erro('Preencha data e horários');
-  if(hfim <= hini) return erro('O horário final precisa ser depois do inicial');
-  var sel = document.getElementById('np-svc');
-  var preco = parseFloat(sel.options[sel.selectedIndex].getAttribute('data-preco')||0);
+  if(!_npServicos.length) return erro('Adicione ao menos um serviço (escolha e toque em "+ Add")');
+  if(!data || !hini) return erro('Preencha a data e o horário de início');
   var btn = document.getElementById('np-salvar');
   btn.disabled = true; btn.textContent = 'Salvando...'; btn.style.opacity = '.6';
   fetch('/api/profissional/agendamento',{
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({cli_id:_npCliId, svc_id:parseInt(svc,10), data:data, h_ini:hini, h_fim:hfim, preco:preco})
+    body: JSON.stringify({
+      cli_id: _npCliId,
+      data: data,
+      h_ini: hini,
+      servicos: _npServicos.map(function(s){
+        return {svc_id: s.svc_id, duracao_min: s.duracao_min, preco: s.preco};
+      })
+    })
   }).then(function(r){return r.json();}).then(function(d){
     btn.disabled = false; btn.textContent = 'Criar Agendamento'; btn.style.opacity = '1';
     if(d.ok){

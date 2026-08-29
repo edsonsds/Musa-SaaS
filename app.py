@@ -1466,20 +1466,60 @@ def minha_agenda_criar():
         return jsonify({'ok': False, 'erro': 'Você não tem permissão para criar agendamentos. Fale com o administrador.'}), 403
     d = request.json or {}
     cli_id = d.get('cli_id')
-    svc_id = d.get('svc_id')
     data   = (d.get('data') or '').strip()
     h_ini  = (d.get('h_ini') or '').strip()
-    h_fim  = (d.get('h_fim') or '').strip()
-    if not (cli_id and svc_id and data and h_ini and h_fim):
-        return jsonify({'ok': False, 'erro': 'Preencha cliente, serviço, data e horário'})
 
-    # Conflito com outro atendimento DELE no mesmo horário
+    # Aceita vários serviços: [{svc_id, duracao_min, preco}, ...]
+    # Se vier no formato antigo (svc_id único), converte para lista de um item.
+    servicos = d.get('servicos')
+    if not servicos:
+        if not d.get('svc_id'):
+            return jsonify({'ok': False, 'erro': 'Selecione ao menos um serviço'})
+        servicos = [{'svc_id': d.get('svc_id'), 'preco': d.get('preco', 0),
+                     'h_fim': (d.get('h_fim') or '').strip()}]
+    if not (cli_id and data and h_ini):
+        return jsonify({'ok': False, 'erro': 'Preencha cliente, data e horário'})
+
+    def _min(hm):
+        p = hm.split(':')
+        return int(p[0]) * 60 + int(p[1])
+    def _hm(m):
+        m = max(0, min(m, 23*60+59))
+        return str(m // 60).zfill(2) + ':' + str(m % 60).zfill(2)
+
+    # Monta os blocos em sequência a partir do horário inicial
+    blocos = []
+    cursor = _min(h_ini)
+    for it in servicos:
+        svc_id = it.get('svc_id')
+        if not svc_id:
+            continue
+        if it.get('h_fim'):
+            fim_m = _min(it['h_fim'])
+        else:
+            dur = int(it.get('duracao_min') or 0)
+            if dur <= 0:
+                svc_row = db_exec("SELECT duracao_min FROM servicos WHERE id=%s AND salon_id=%s", (svc_id, sid), 'one')
+                dur = int((svc_row or {}).get('duracao_min') or 60)
+            fim_m = cursor + dur
+        if fim_m <= cursor:
+            fim_m = cursor + 30
+        blocos.append({'svc_id': svc_id, 'h_ini': _hm(cursor), 'h_fim': _hm(fim_m),
+                       'preco': it.get('preco', 0)})
+        cursor = fim_m
+    if not blocos:
+        return jsonify({'ok': False, 'erro': 'Selecione ao menos um serviço'})
+
+    faixa_ini = blocos[0]['h_ini']
+    faixa_fim = blocos[-1]['h_fim']
+
+    # Conflito com outro atendimento DELE — checa a faixa inteira de uma vez
     conflito = db_exec("""SELECT a.id, c.nome as cli_nome, a.h_ini, a.h_fim
         FROM agendamentos a LEFT JOIN clientes c ON c.id=a.cli_id
         WHERE a.salon_id=%s AND a.pro_id=%s AND a.data=%s
           AND a.status NOT IN ('cancelado')
           AND a.h_ini < %s AND a.h_fim > %s
-        LIMIT 1""", (sid, pro_id, data, h_fim, h_ini), 'one')
+        LIMIT 1""", (sid, pro_id, data, faixa_fim, faixa_ini), 'one')
     if conflito:
         return jsonify({'ok': False, 'erro': 'Você já tem atendimento nesse horário: '
                         + (conflito.get('cli_nome') or 'cliente') + ' ('
@@ -1487,31 +1527,34 @@ def minha_agenda_criar():
 
     # Bloqueio/indisponibilidade que atinja este profissional
     try:
-        ini_dt = data + ' ' + h_ini
-        fim_dt = data + ' ' + h_fim
         bloq = db_exec("""SELECT motivo FROM indisponibilidades
             WHERE salon_id=%s AND (pro_id=%s OR pro_id=0 OR pro_id IS NULL)
               AND data_inicio < %s AND data_fim > %s LIMIT 1""",
-            (sid, pro_id, fim_dt, ini_dt), 'one')
+            (sid, pro_id, data + ' ' + faixa_fim, data + ' ' + faixa_ini), 'one')
         if bloq:
             return jsonify({'ok': False, 'erro': 'Horário bloqueado: ' + (bloq.get('motivo') or 'indisponível')})
     except Exception:
         pass
 
-    # Anti-duplicata (duplo toque no celular)
+    # Anti-duplicata (duplo toque no celular) — olha o primeiro bloco
     dup = db_exec("""SELECT id FROM agendamentos
         WHERE salon_id=%s AND cli_id=%s AND pro_id=%s AND svc_id=%s AND data=%s AND h_ini=%s
           AND criado_em > NOW() - INTERVAL '10 seconds' LIMIT 1""",
-        (sid, cli_id, pro_id, svc_id, data, h_ini), 'one')
+        (sid, cli_id, pro_id, blocos[0]['svc_id'], data, blocos[0]['h_ini']), 'one')
     if dup:
         return jsonify({'ok': True, 'id': dup['id'], 'duplicado_ignorado': True})
 
-    cur = db_exec("""INSERT INTO agendamentos (salon_id,cli_id,pro_id,svc_id,data,h_ini,h_fim,preco,status,obs)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'agendado',%s) RETURNING id""",
-        (sid, cli_id, pro_id, svc_id, data, h_ini, h_fim, d.get('preco', 0), d.get('obs', '')), 'one')
+    ids = []
+    for b in blocos:
+        cur = db_exec("""INSERT INTO agendamentos (salon_id,cli_id,pro_id,svc_id,data,h_ini,h_fim,preco,status,obs)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'agendado',%s) RETURNING id""",
+            (sid, cli_id, pro_id, b['svc_id'], data, b['h_ini'], b['h_fim'],
+             b.get('preco', 0), d.get('obs', '')), 'one')
+        ids.append(cur['id'])
     db_exec("UPDATE retorno_alertas SET realizado=1 WHERE salon_id=%s AND cli_id=%s AND realizado=0", (sid, cli_id))
     db_commit()
-    return jsonify({'ok': True, 'id': cur['id']})
+    return jsonify({'ok': True, 'id': ids[0], 'ids': ids, 'total': len(ids),
+                    'h_ini': faixa_ini, 'h_fim': faixa_fim})
 
 @app.route('/api/profissional/agendamento/<int:aid>', methods=['DELETE'])
 def minha_agenda_excluir(aid):
@@ -2660,15 +2703,31 @@ def retorno_realizado(rid):
 # ─── CLIENTES INATIVOS ────────────────────────────────────────────────────────
 @app.route('/api/clientes/inativos', methods=['GET'])
 def clientes_inativos():
+    """Clientes que JÁ FORAM ATENDIDAS e não voltam há X dias.
+    Quem nunca teve atendimento concluído não é inativa — é cliente nova,
+    então fica fora desta lista."""
     sid, err = require_salon()
     if err: return err
     dias = int(request.args.get('dias', 40))
     corte = (today_br()-datetime.timedelta(days=dias)).isoformat()
     rows = db_exec("""SELECT c.*,
         (SELECT COUNT(*) FROM agendamentos WHERE salon_id=%s AND cli_id=c.id AND status='concluido') as total_ags,
-        (SELECT COALESCE(SUM(preco),0) FROM agendamentos WHERE salon_id=%s AND cli_id=c.id AND status='concluido') as total_gasto
-        FROM clientes c WHERE c.salon_id=%s AND c.ativo=1 AND (c.ultima_visita IS NULL OR c.ultima_visita='' OR c.ultima_visita<=%s)
-        ORDER BY c.ultima_visita ASC NULLS FIRST""", (sid,sid,sid,corte), 'all')
+        (SELECT COALESCE(SUM(preco),0) FROM agendamentos WHERE salon_id=%s AND cli_id=c.id AND status='concluido') as total_gasto,
+        (SELECT MAX(data) FROM agendamentos WHERE salon_id=%s AND cli_id=c.id AND status='concluido') as ultimo_atendimento
+        FROM clientes c
+        WHERE c.salon_id=%s AND c.ativo=1
+          -- precisa ter pelo menos um atendimento concluído
+          AND EXISTS (SELECT 1 FROM agendamentos a
+                      WHERE a.salon_id=%s AND a.cli_id=c.id AND a.status='concluido')
+          -- e o último atendimento precisa ser anterior ao corte
+          AND (SELECT MAX(data) FROM agendamentos a2
+               WHERE a2.salon_id=%s AND a2.cli_id=c.id AND a2.status='concluido') <= %s
+          -- e não pode ter agendamento futuro marcado
+          AND NOT EXISTS (SELECT 1 FROM agendamentos a3
+                          WHERE a3.salon_id=%s AND a3.cli_id=c.id
+                            AND a3.data >= %s AND a3.status NOT IN ('cancelado'))
+        ORDER BY ultimo_atendimento ASC""",
+        (sid, sid, sid, sid, sid, sid, corte, sid, today_br().isoformat()), 'all')
     return jsonify([dict(r) for r in rows])
 
 # ─── DUPLICATAS ───────────────────────────────────────────────────────────────
@@ -4493,18 +4552,21 @@ def contato_auto_disparar():
             elif tipo == 'inativo':
                 dias_in = cfg.get('dias_inativo', 40)
                 limite = (hoje - _dt.timedelta(days=int(dias_in))).isoformat()
-                # Data de referência: último atendimento OU, na falta, a data de cadastro
-                # (cliente importado sem histórico não é considerado inativo de imediato)
+                # Só entram clientes que JÁ FORAM ATENDIDAS e não voltam desde então.
+                # Quem nunca teve atendimento concluído (cadastro novo ou importado
+                # sem histórico) NÃO recebe "sentimos sua falta".
                 clientes = db_exec("""
                     SELECT c.id as cli_id, c.nome as cli_nome, c.tel as cli_tel,
-                           COALESCE(MAX(a.data), NULLIF(c.criado_em,'')) as ultima
+                           MAX(a.data) as ultima
                     FROM clientes c
-                    LEFT JOIN agendamentos a ON a.cli_id=c.id AND a.salon_id=%s AND a.status='concluido'
+                    JOIN agendamentos a ON a.cli_id=c.id AND a.salon_id=%s AND a.status='concluido'
                     WHERE c.salon_id=%s AND c.ativo=1 AND c.tel != ''
-                    GROUP BY c.id, c.nome, c.tel, c.criado_em
-                    HAVING COALESCE(MAX(a.data), NULLIF(c.criado_em,'')) IS NOT NULL
-                       AND COALESCE(MAX(a.data), NULLIF(c.criado_em,'')) <= %s
-                """, (s, s, limite), 'all')
+                      AND NOT EXISTS (SELECT 1 FROM agendamentos af
+                                      WHERE af.salon_id=%s AND af.cli_id=c.id
+                                        AND af.data >= %s AND af.status NOT IN ('cancelado'))
+                    GROUP BY c.id, c.nome, c.tel
+                    HAVING MAX(a.data) <= %s
+                """, (s, s, s, hoje.isoformat(), limite), 'all')
             elif tipo == 'lembrete':
                 # O lembrete tem sua própria rota dedicada (lembrete_disparar); aqui não processa nada
                 # para nunca puxar clientes "inativos" por engano e enviar o texto errado.
@@ -4788,9 +4850,9 @@ def disparo_preview():
     elif filtro == 'ativos_180':
         clientes = db_exec("SELECT id,nome,tel FROM clientes WHERE salon_id=%s AND tel!='' AND ativo=1 AND ultima_visita >= %s ORDER BY ultima_visita DESC", (sid, dlimite(180)), 'all')
     elif filtro == 'inativos_90_180':
-        clientes = db_exec("SELECT id,nome,tel FROM clientes WHERE salon_id=%s AND tel!='' AND ativo=1 AND ultima_visita < %s AND ultima_visita >= %s ORDER BY ultima_visita DESC", (sid, dlimite(90), dlimite(180)), 'all')
+        clientes = db_exec("SELECT id,nome,tel FROM clientes WHERE salon_id=%s AND tel!='' AND ativo=1 AND ultima_visita IS NOT NULL AND ultima_visita != '' AND ultima_visita < %s AND ultima_visita >= %s ORDER BY ultima_visita DESC", (sid, dlimite(90), dlimite(180)), 'all')
     elif filtro == 'inativos_180':
-        clientes = db_exec("SELECT id,nome,tel FROM clientes WHERE salon_id=%s AND tel!='' AND ativo=1 AND ultima_visita < %s ORDER BY ultima_visita DESC", (sid, dlimite(180)), 'all')
+        clientes = db_exec("SELECT id,nome,tel FROM clientes WHERE salon_id=%s AND tel!='' AND ativo=1 AND ultima_visita IS NOT NULL AND ultima_visita != '' AND ultima_visita < %s ORDER BY ultima_visita DESC", (sid, dlimite(180)), 'all')
     else:
         clientes = db_exec("SELECT id,nome,tel FROM clientes WHERE salon_id=%s AND tel!='' AND ativo=1 ORDER BY ultima_visita DESC NULLS LAST", (sid,), 'all')
     clientes = clientes or []
@@ -4822,9 +4884,9 @@ def disparo_iniciar():
     elif filtro == 'ativos_180':
         clientes = db_exec("SELECT id,nome,tel FROM clientes WHERE salon_id=%s AND tel!='' AND ativo=1 AND ultima_visita >= %s", (sid, dlimite(180)), 'all')
     elif filtro == 'inativos_90_180':
-        clientes = db_exec("SELECT id,nome,tel FROM clientes WHERE salon_id=%s AND tel!='' AND ativo=1 AND ultima_visita < %s AND ultima_visita >= %s", (sid, dlimite(90), dlimite(180)), 'all')
+        clientes = db_exec("SELECT id,nome,tel FROM clientes WHERE salon_id=%s AND tel!='' AND ativo=1 AND ultima_visita IS NOT NULL AND ultima_visita != '' AND ultima_visita < %s AND ultima_visita >= %s", (sid, dlimite(90), dlimite(180)), 'all')
     elif filtro == 'inativos_180':
-        clientes = db_exec("SELECT id,nome,tel FROM clientes WHERE salon_id=%s AND tel!='' AND ativo=1 AND ultima_visita < %s", (sid, dlimite(180)), 'all')
+        clientes = db_exec("SELECT id,nome,tel FROM clientes WHERE salon_id=%s AND tel!='' AND ativo=1 AND ultima_visita IS NOT NULL AND ultima_visita != '' AND ultima_visita < %s", (sid, dlimite(180)), 'all')
     else:
         clientes = db_exec("SELECT id,nome,tel FROM clientes WHERE salon_id=%s AND tel!='' AND ativo=1", (sid,), 'all')
     clientes = clientes or []
